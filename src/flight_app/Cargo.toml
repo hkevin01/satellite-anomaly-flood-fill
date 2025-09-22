@@ -1,0 +1,28 @@
+[package]
+name = "flight_app"
+version = "0.1.0"
+edition = "2021"
+authors = ["Satellite FDIR Team"]
+description = "Flight software implementation for satellite anomaly detection"
+license = "MIT"
+keywords = ["satellite", "flight-software", "embedded", "no-std"]
+categories = ["aerospace", "embedded", "no-std"]
+
+[features]
+default = ["no_std"]
+std = []
+no_std = ["heapless"]
+
+[dependencies]
+anomaly_map = { path = "../anomaly_map", default-features = false, features = ["no_std"] }
+floodfill_core = { path = "../floodfill_core", default-features = false, features = ["no_std"] }
+features = { path = "../features", default-features = false, features = ["no_std"] }
+decisions = { path = "../decisions", default-features = false, features = ["no_std"] }
+heapless = "0.8"
+embedded-hal = "1.0"
+nb = "1.1"
+
+[dev-dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+panic-halt = "0.2"

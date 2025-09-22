@@ -1,0 +1,23 @@
+[package]
+name = "decisions"
+version = "0.1.0"
+edition = "2021"
+authors = ["Satellite FDIR Team"]
+description = "Decision engine for satellite anomaly response and FDIR actions"
+license = "MIT"
+keywords = ["satellite", "decision-engine", "fdir", "embedded"]
+categories = ["aerospace", "algorithms", "no-std"]
+
+[features]
+default = ["std"]
+std = []
+no_std = ["heapless"]
+
+[dependencies]
+features = { path = "../features" }
+heapless = { version = "0.8", optional = true }
+thiserror = { version = "1.0", default-features = false }
+
+[dev-dependencies]
+proptest = "1.4"
+criterion = "0.5"
