@@ -1,0 +1,100 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/.ropeproject
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+/build/
+/dist/
+*.so
+*.dll
+*.exe
+
+# Logs
+*.log
+logs/
+
+# Data files (but keep structure)
+/data/*
+!/data/.gitkeep
+/assets/temp/
+*.tmp
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Coverage
+coverage/
+*.lcov
+
+# System files
+Thumbs.db
+.DS_Store
+
+# Flight software specifics
+*.bin
+*.hex
+*.elf
+*.map
+
+# Python (if any support scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+htmlcov/
+
+# Documentation build
+/docs/_build/
+/docs/site/
+
+# Temporary files
+*.orig
+*.rej
+*~

@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "src/anomaly_map",
+    "src/floodfill_core", 
+    "src/features",
+    "src/decisions",
+    "src/flight_app",
+    "src/sim_host",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Satellite Anomaly Detection Team"]
+license = "MIT"
+repository = "https://github.com/user/satellite-anomaly-flood-fill"
+
+[workspace.dependencies]
+# Common dependencies shared across crates
+heapless = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+log = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Flight-specific dependencies (no_std)
+nb = "1.1"
+embedded-hal = "1.0"
+
+# Host simulation dependencies (std)
+tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = 0

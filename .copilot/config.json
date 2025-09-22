@@ -1,0 +1,21 @@
+{
+  "project_type": "rust_workspace",
+  "target_environments": ["embedded", "desktop"],
+  "code_style": {
+    "naming_convention": "rust_standard",
+    "line_length": 100,
+    "indentation": 2
+  },
+  "constraints": {
+    "no_std_crates": ["flight_app", "anomaly_map", "floodfill_core", "features", "decisions"],
+    "std_crates": ["sim_host"],
+    "deterministic_execution": true,
+    "real_time_constraints": true
+  },
+  "suggestions": {
+    "prefer_heapless": true,
+    "require_error_handling": true,
+    "enforce_bounds_checking": true,
+    "add_performance_metrics": true
+  }
+}

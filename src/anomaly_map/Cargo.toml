@@ -1,0 +1,21 @@
+[package]
+name = "anomaly_map"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Data structures and utilities for satellite anomaly grid representations"
+
+[features]
+default = ["std"]
+std = ["heapless/std", "serde/std"]
+
+[dependencies]
+heapless.workspace = true
+serde = { workspace = true, optional = true }
+thiserror = { version = "1.0", optional = true }
+log.workspace = true
+
+[dev-dependencies]
+serde_json = "1.0"
