@@ -15,7 +15,8 @@ no_std = ["heapless"]
 
 [dependencies]
 features = { path = "../features" }
-heapless = { version = "0.8", optional = true }
+floodfill_core = { path = "../floodfill_core" }
+heapless = { workspace = true, optional = true }
 thiserror = { version = "1.0", default-features = false }
 
 [dev-dependencies]

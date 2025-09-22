@@ -2,25 +2,16 @@
 name = "floodfill_core"
 version = "0.1.0"
 edition = "2021"
-authors = ["Satellite FDIR Team"]
-description = "Core flood-fill algorithms for satellite anomaly detection"
-license = "MIT"
-keywords = ["satellite", "flood-fill", "anomaly-detection", "embedded"]
-categories = ["aerospace", "algorithms", "no-std"]
 
 [features]
 default = ["std"]
 std = []
-no_std = ["heapless"]
+no_std = ["heapless", "embedded-time"]
 
 [dependencies]
-heapless = { version = "0.8", optional = true }
-thiserror = { version = "1.0", default-features = false }
+heapless = { workspace = true, optional = true }
+embedded-time = { version = "0.12", optional = true }
 
 [dev-dependencies]
-proptest = "1.4"
-criterion = "0.5"
-
-[[bench]]
-name = "flood_fill_benchmarks"
-harness = false
+criterion = "0.4"
+proptest = "1.0"

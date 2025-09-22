@@ -14,11 +14,19 @@ std = []
 no_std = ["heapless"]
 
 [dependencies]
-anomaly_map = { path = "../anomaly_map", default-features = false, features = ["no_std"] }
-floodfill_core = { path = "../floodfill_core", default-features = false, features = ["no_std"] }
-features = { path = "../features", default-features = false, features = ["no_std"] }
-decisions = { path = "../decisions", default-features = false, features = ["no_std"] }
-heapless = "0.8"
+anomaly_map = { path = "../anomaly_map", default-features = false, features = [
+  "no_std",
+] }
+floodfill_core = { path = "../floodfill_core", default-features = false, features = [
+  "no_std",
+] }
+features = { path = "../features", default-features = false, features = [
+  "no_std",
+] }
+decisions = { path = "../decisions", default-features = false, features = [
+  "no_std",
+] }
+heapless = { workspace = true, optional = true }
 embedded-hal = "1.0"
 nb = "1.1"
 

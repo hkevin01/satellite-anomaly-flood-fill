@@ -2,11 +2,6 @@
 name = "features"
 version = "0.1.0"
 edition = "2021"
-authors = ["Satellite FDIR Team"]
-description = "Feature extraction and analysis for satellite anomaly regions"
-license = "MIT"
-keywords = ["satellite", "feature-extraction", "anomaly-analysis", "embedded"]
-categories = ["aerospace", "algorithms", "no-std"]
 
 [features]
 default = ["std"]
@@ -15,9 +10,8 @@ no_std = ["heapless"]
 
 [dependencies]
 floodfill_core = { path = "../floodfill_core" }
-heapless = { version = "0.8", optional = true }
-thiserror = { version = "1.0", default-features = false }
+anomaly_map = { path = "../anomaly_map" }
+heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
-proptest = "1.4"
-criterion = "0.5"
+proptest = "1.0"

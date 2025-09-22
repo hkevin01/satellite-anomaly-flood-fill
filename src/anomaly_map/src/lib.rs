@@ -4,9 +4,8 @@
 extern crate alloc;
 
 #[cfg(feature = "no_std")]
-use alloc::vec::Vec;
+use alloc::{vec::Vec, vec};
 use core::fmt;
-use thiserror::Error;
 
 /// Timestamp in milliseconds for temporal tracking
 pub type Timestamp = u64;
@@ -14,368 +13,440 @@ pub type Timestamp = u64;
 /// Performance metrics for monitoring execution
 #[derive(Clone, Copy, Debug)]
 pub struct PerformanceMetrics {
-    pub execution_time_us: u64,
-    pub memory_used_bytes: usize,
-    pub cells_processed: usize,
+    /// Processing time in microseconds
+    pub processing_time_us: u64,
+    /// Memory used in bytes
+    pub memory_usage_bytes: usize,
+    /// Number of operations performed
+    pub operations_count: usize,
 }
 
 impl Default for PerformanceMetrics {
     fn default() -> Self {
         Self {
-            execution_time_us: 0,
-            memory_used_bytes: 0,
-            cells_processed: 0,
+            processing_time_us: 0,
+            memory_usage_bytes: 0,
+            operations_count: 0,
         }
     }
 }
 
 /// Error types for anomaly map operations
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnomalyMapError {
-    #[error("Index out of bounds: ({x}, {y}) for grid size ({width}x{height})")]
     IndexOutOfBounds { x: usize, y: usize, width: usize, height: usize },
-    
-    #[error("Invalid grid dimensions: width={width}, height={height}")]
     InvalidDimensions { width: usize, height: usize },
-    
-    #[error("Memory allocation failed for {requested} bytes")]
-    MemoryAllocationFailed { requested: usize },
-    
-    #[error("Grid operation timed out after {timeout_ms}ms")]
-    OperationTimeout { timeout_ms: u64 },
-    
-    #[error("Data corruption detected at position ({x}, {y})")]
+    AllocationFailed { requested: usize },
+    Timeout { timeout_ms: u64 },
     DataCorruption { x: usize, y: usize },
-    
-    #[error("Grid is in invalid state: {reason}")]
     InvalidState { reason: &'static str },
 }
 
-/// Result type for anomaly map operations
-pub type Result<T> = core::result::Result<T, AnomalyMapError>;
-
-/// Cell status with enhanced states for better fault detection
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CellStatus {
-    /// Normal operating conditions
-    Nominal,
-    /// Anomalous conditions detected
-    Anomalous,
-    /// Cell is offline/non-responsive
-    Offline,
-    /// Cell is under maintenance/calibration
-    Maintenance,
-    /// Cell data is suspect/unverified
-    Suspect,
-}
-
-impl Default for CellStatus {
-    fn default() -> Self {
-        CellStatus::Nominal
-    }
-}
-
-impl fmt::Display for CellStatus {
+impl fmt::Display for AnomalyMapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CellStatus::Nominal => write!(f, "NOMINAL"),
-            CellStatus::Anomalous => write!(f, "ANOMALOUS"),
-            CellStatus::Offline => write!(f, "OFFLINE"),
-            CellStatus::Maintenance => write!(f, "MAINTENANCE"),
-            CellStatus::Suspect => write!(f, "SUSPECT"),
+            AnomalyMapError::IndexOutOfBounds { x, y, width, height } => {
+                write!(f, "Index out of bounds: ({}, {}) for grid size ({}x{})", x, y, width, height)
+            }
+            AnomalyMapError::InvalidDimensions { width, height } => {
+                write!(f, "Invalid grid dimensions: width={}, height={}", width, height)
+            }
+            AnomalyMapError::AllocationFailed { requested } => {
+                write!(f, "Memory allocation failed for {} bytes", requested)
+            }
+            AnomalyMapError::Timeout { timeout_ms } => {
+                write!(f, "Grid operation timed out after {}ms", timeout_ms)
+            }
+            AnomalyMapError::DataCorruption { x, y } => {
+                write!(f, "Data corruption detected at position ({}, {})", x, y)
+            }
+            AnomalyMapError::InvalidState { reason } => {
+                write!(f, "Grid is in invalid state: {}", reason)
+            }
         }
     }
 }
 
-/// Enhanced cell structure with temporal tracking and bounds checking
-#[derive(Clone, Copy, Debug)]
-pub struct Cell {
-    pub status: CellStatus,
-    /// Temperature in tenths of degrees Celsius (-400.0 to +850.0°C range)
-    pub temp_dc: i16,
-    /// Current in milliamps
-    pub current_ma: i16,
-    /// Radiation counts per second
-    pub radiation_cps: u16,
-    /// Timestamp of last update
-    pub last_update: Timestamp,
-    /// Number of anomaly detections for this cell
-    pub anomaly_count: u16,
-    /// Cell health metric (0-100%)
-    pub health_percent: u8,
+#[cfg(all(feature = "std", not(feature = "no_std")))]
+impl std::error::Error for AnomalyMapError {}
+
+/// Cell state values for the anomaly grid
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellState {
+    /// Normal operation state
+    Normal = 0,
+    /// Anomaly detected
+    Anomaly = 1,
+    /// Cell is being monitored
+    Monitoring = 2,
+    /// Cell is disabled/offline
+    Disabled = 3,
 }
 
-impl Default for Cell {
+impl From<u8> for CellState {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => CellState::Normal,
+            1 => CellState::Anomaly,
+            2 => CellState::Monitoring,
+            3 => CellState::Disabled,
+            _ => CellState::Normal, // Default to normal for invalid values
+        }
+    }
+}
+
+impl From<CellState> for u8 {
+    fn from(state: CellState) -> Self {
+        state as u8
+    }
+}
+
+/// A single cell in the anomaly grid with temporal information
+#[derive(Debug, Clone, Copy)]
+pub struct AnomalyCell {
+    /// Current state of the cell
+    pub state: CellState,
+    /// Timestamp when the cell was last updated
+    pub last_updated: Timestamp,
+    /// Confidence level (0-255)
+    pub confidence: u8,
+    /// Reserved for future use
+    pub _reserved: u8,
+}
+
+impl Default for AnomalyCell {
     fn default() -> Self {
         Self {
-            status: CellStatus::Nominal,
-            temp_dc: 200,  // 20.0°C
-            current_ma: 0,
-            radiation_cps: 0,
-            last_update: 0,
-            anomaly_count: 0,
-            health_percent: 100,
+            state: CellState::Normal,
+            last_updated: 0,
+            confidence: 255,
+            _reserved: 0,
         }
     }
 }
 
-impl Cell {
-    /// Create a new cell with specified values and bounds checking
-    pub fn new(
-        temp_dc: i16,
-        current_ma: i16,
-        radiation_cps: u16,
-        timestamp: Timestamp,
-    ) -> Result<Self> {
-        // Temperature bounds: -40.0°C to +85.0°C for space electronics
-        if temp_dc < -400 || temp_dc > 850 {
-            return Err(AnomalyMapError::InvalidState {
-                reason: "Temperature out of valid range"
-            });
+impl AnomalyCell {
+    /// Create a new anomaly cell with the given state
+    pub fn new(state: CellState, timestamp: Timestamp) -> Self {
+        Self {
+            state,
+            last_updated: timestamp,
+            confidence: 255,
+            _reserved: 0,
         }
-        
-        // Current bounds: reasonable for small satellite components
-        if current_ma < -10000 || current_ma > 10000 {
-            return Err(AnomalyMapError::InvalidState {
-                reason: "Current out of valid range"
-            });
-        }
-        
-        Ok(Self {
-            status: CellStatus::Nominal,
-            temp_dc,
-            current_ma,
-            radiation_cps,
-            last_update: timestamp,
-            anomaly_count: 0,
-            health_percent: 100,
-        })
     }
-    
-    /// Update cell values with bounds checking and anomaly detection
-    pub fn update(
-        &mut self,
-        temp_dc: i16,
-        current_ma: i16,
-        radiation_cps: u16,
-        timestamp: Timestamp,
-    ) -> Result<()> {
-        // Validate inputs
-        if temp_dc < -400 || temp_dc > 850 {
-            self.status = CellStatus::Suspect;
-            return Err(AnomalyMapError::InvalidState {
-                reason: "Temperature reading out of range"
-            });
-        }
-        
-        if current_ma < -10000 || current_ma > 10000 {
-            self.status = CellStatus::Suspect;
-            return Err(AnomalyMapError::InvalidState {
-                reason: "Current reading out of range"
-            });
-        }
-        
-        // Check for temporal consistency
-        if timestamp < self.last_update {
-            self.status = CellStatus::Suspect;
-            return Err(AnomalyMapError::InvalidState {
-                reason: "Timestamp regression detected"
-            });
-        }
-        
-        // Update values
-        let old_temp = self.temp_dc;
-        self.temp_dc = temp_dc;
-        self.current_ma = current_ma;
-        self.radiation_cps = radiation_cps;
-        self.last_update = timestamp;
-        
-        // Simple anomaly detection based on temperature delta
-        let temp_delta = (temp_dc - old_temp).abs();
-        if temp_delta > 100 {  // 10°C sudden change
-            self.anomaly_count = self.anomaly_count.saturating_add(1);
-            self.status = CellStatus::Anomalous;
-            self.health_percent = self.health_percent.saturating_sub(5);
-        } else if self.status == CellStatus::Anomalous && temp_delta < 20 {
-            // Recovery condition
-            self.status = CellStatus::Nominal;
-            self.health_percent = (self.health_percent + 1).min(100);
-        }
-        
-        // High radiation detection
-        if radiation_cps > 1000 {
-            self.anomaly_count = self.anomaly_count.saturating_add(1);
-            self.status = CellStatus::Anomalous;
-            self.health_percent = self.health_percent.saturating_sub(2);
-        }
-        
-        Ok(())
+
+    /// Check if the cell is in an anomalous state
+    pub fn is_anomaly(&self) -> bool {
+        matches!(self.state, CellState::Anomaly)
     }
-    
-    /// Get temperature in degrees Celsius
-    pub fn temp_celsius(&self) -> f32 {
-        self.temp_dc as f32 / 10.0
+
+    /// Check if the cell is available for operations
+    pub fn is_available(&self) -> bool {
+        !matches!(self.state, CellState::Disabled)
     }
-    
-    /// Check if cell is considered healthy
-    pub fn is_healthy(&self) -> bool {
-        self.health_percent > 70 && self.status != CellStatus::Offline
+
+    /// Update the cell state with a new timestamp
+    pub fn update_state(&mut self, state: CellState, timestamp: Timestamp) {
+        self.state = state;
+        self.last_updated = timestamp;
+    }
+
+    /// Get the age of the cell data in milliseconds
+    pub fn age(&self, current_time: Timestamp) -> u64 {
+        current_time.saturating_sub(self.last_updated)
     }
 }
 
-/// Enhanced 2D grid with comprehensive error handling and performance monitoring
-pub struct Grid2D<T> {
+/// Grid configuration parameters
+#[derive(Debug, Clone, Copy)]
+pub struct GridConfig {
+    /// Grid width
     pub width: usize,
+    /// Grid height
     pub height: usize,
-    data: Vec<T>,
-    /// Creation timestamp
-    pub created_at: Timestamp,
-    /// Last modification timestamp
-    pub last_modified: Timestamp,
-    /// Total number of updates performed
-    pub update_count: u64,
-    /// Performance metrics
-    pub metrics: PerformanceMetrics,
+    /// Maximum age for cell data before it's considered stale (ms)
+    pub max_cell_age_ms: u64,
+    /// Default confidence level for new cells
+    pub default_confidence: u8,
 }
 
-impl<T: Copy + Default> Grid2D<T> {
-    /// Create a new grid with bounds checking and memory management
-    pub fn new(width: usize, height: usize, init: T) -> Result<Self> {
-        // Validate dimensions
-        if width == 0 || height == 0 {
-            return Err(AnomalyMapError::InvalidDimensions { width, height });
+impl Default for GridConfig {
+    fn default() -> Self {
+        Self {
+            width: 32,
+            height: 32,
+            max_cell_age_ms: 5000, // 5 seconds
+            default_confidence: 255,
         }
-        
-        // Check for overflow
-        let total_size = width.checked_mul(height)
-            .ok_or(AnomalyMapError::InvalidDimensions { width, height })?;
-        
-        // Reasonable size limit for embedded systems (64KB default)
-        const MAX_CELLS: usize = 65536;
-        if total_size > MAX_CELLS {
-            return Err(AnomalyMapError::MemoryAllocationFailed { 
-                requested: total_size * core::mem::size_of::<T>() 
+    }
+}
+
+/// Result type for grid operations
+pub type GridResult<T> = Result<T, AnomalyMapError>;
+
+/// A 2D grid for tracking satellite anomalies with temporal information
+#[derive(Debug, Clone)]
+pub struct AnomalyGrid {
+    /// Grid configuration
+    config: GridConfig,
+    /// Cell data storage
+    cells: Vec<AnomalyCell>,
+    /// Performance metrics
+    metrics: PerformanceMetrics,
+}
+
+impl AnomalyGrid {
+    /// Create a new anomaly grid with the given configuration
+    pub fn new(config: GridConfig) -> GridResult<Self> {
+        if config.width == 0 || config.height == 0 {
+            return Err(AnomalyMapError::InvalidDimensions {
+                width: config.width,
+                height: config.height,
             });
         }
-        
-        let data = vec![init; total_size];
-        let now = get_timestamp();
-        
+
+        let total_size = config.width * config.height;
+        let data = vec![AnomalyCell::default(); total_size];
+
         Ok(Self {
-            width,
-            height,
-            data,
-            created_at: now,
-            last_modified: now,
-            update_count: 0,
+            config,
+            cells: data,
             metrics: PerformanceMetrics::default(),
         })
     }
-    
-    /// Create a grid with default values
-    pub fn new_default(width: usize, height: usize) -> Result<Self> {
-        Self::new(width, height, T::default())
+
+    /// Create a new grid with default dimensions
+    pub fn default() -> GridResult<Self> {
+        Self::new(GridConfig::default())
     }
-    
-    /// Get linear index with bounds checking
-    #[inline]
-    pub fn idx(&self, x: usize, y: usize) -> Result<usize> {
-        if x >= self.width || y >= self.height {
-            return Err(AnomalyMapError::IndexOutOfBounds {
-                x, y, width: self.width, height: self.height
-            });
-        }
-        Ok(y * self.width + x)
-    }
-    
-    /// Check if coordinates are within bounds
-    #[inline]
-    pub fn in_bounds(&self, x: i32, y: i32) -> bool {
-        x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height
-    }
-    
-    /// Safe coordinate checking for usize
-    #[inline]
-    pub fn in_bounds_usize(&self, x: usize, y: usize) -> bool {
-        x < self.width && y < self.height
-    }
-    
-    /// Get cell reference with bounds checking
-    pub fn get(&self, x: usize, y: usize) -> Result<&T> {
-        let idx = self.idx(x, y)?;
-        Ok(&self.data[idx])
-    }
-    
-    /// Get mutable cell reference with bounds checking
-    pub fn get_mut(&mut self, x: usize, y: usize) -> Result<&mut T> {
-        let idx = self.idx(x, y)?;
-        self.last_modified = get_timestamp();
-        self.update_count += 1;
-        Ok(&mut self.data[idx])
-    }
-    
-    /// Safely set cell value
-    pub fn set(&mut self, x: usize, y: usize, value: T) -> Result<()> {
-        let idx = self.idx(x, y)?;
-        self.data[idx] = value;
-        self.last_modified = get_timestamp();
-        self.update_count += 1;
-        Ok(())
-    }
-    
+
     /// Get grid dimensions
     pub fn dimensions(&self) -> (usize, usize) {
-        (self.width, self.height)
+        (self.config.width, self.config.height)
     }
-    
-    /// Get total number of cells
+
+    /// Get the total number of cells
     pub fn cell_count(&self) -> usize {
-        self.width * self.height
+        self.config.width * self.config.height
     }
-    
-    /// Clear all cells to default value
-    pub fn clear(&mut self) {
-        for cell in &mut self.data {
-            *cell = T::default();
-        }
-        self.last_modified = get_timestamp();
-        self.update_count += 1;
+
+    /// Check if coordinates are within bounds
+    pub fn is_valid_coord(&self, x: usize, y: usize) -> bool {
+        x < self.config.width && y < self.config.height
     }
-    
-    /// Get iterator over all cells
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.data.iter()
-    }
-    
-    /// Get mutable iterator over all cells
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.last_modified = get_timestamp();
-        self.data.iter_mut()
-    }
-    
-    /// Validate grid integrity (detect corruption)
-    pub fn validate(&self) -> Result<()> {
-        if self.data.len() != self.width * self.height {
-            return Err(AnomalyMapError::DataCorruption { x: 0, y: 0 });
-        }
-        
-        if self.width == 0 || self.height == 0 {
-            return Err(AnomalyMapError::InvalidState {
-                reason: "Grid has zero dimensions"
+
+    /// Convert 2D coordinates to linear index
+    fn coord_to_index(&self, x: usize, y: usize) -> GridResult<usize> {
+        if !self.is_valid_coord(x, y) {
+            return Err(AnomalyMapError::IndexOutOfBounds {
+                x,
+                y,
+                width: self.config.width,
+                height: self.config.height,
             });
         }
-        
+        Ok(y * self.config.width + x)
+    }
+
+    /// Get a cell at the given coordinates
+    pub fn get_cell(&self, x: usize, y: usize) -> GridResult<&AnomalyCell> {
+        let index = self.coord_to_index(x, y)?;
+        Ok(&self.cells[index])
+    }
+
+    /// Get a mutable cell at the given coordinates
+    pub fn get_cell_mut(&mut self, x: usize, y: usize) -> GridResult<&mut AnomalyCell> {
+        let index = self.coord_to_index(x, y)?;
+        Ok(&mut self.cells[index])
+    }
+
+    /// Set a cell state at the given coordinates
+    pub fn set_cell(&mut self, x: usize, y: usize, state: CellState, timestamp: Timestamp) -> GridResult<()> {
+        let cell = self.get_cell_mut(x, y)?;
+        cell.update_state(state, timestamp);
+        self.metrics.operations_count += 1;
         Ok(())
+    }
+
+    /// Check if a cell is an anomaly
+    pub fn is_anomaly(&self, x: usize, y: usize) -> GridResult<bool> {
+        let cell = self.get_cell(x, y)?;
+        Ok(cell.is_anomaly())
+    }
+
+    /// Get all neighboring coordinates (4-connectivity)
+    pub fn get_neighbors_4(&self, x: usize, y: usize) -> Vec<(usize, usize)> {
+        let mut neighbors = Vec::new();
+
+        // North
+        if y > 0 {
+            neighbors.push((x, y - 1));
+        }
+        // East
+        if x + 1 < self.config.width {
+            neighbors.push((x + 1, y));
+        }
+        // South
+        if y + 1 < self.config.height {
+            neighbors.push((x, y + 1));
+        }
+        // West
+        if x > 0 {
+            neighbors.push((x - 1, y));
+        }
+
+        neighbors
+    }
+
+    /// Get all neighboring coordinates (8-connectivity)
+    pub fn get_neighbors_8(&self, x: usize, y: usize) -> Vec<(usize, usize)> {
+        let mut neighbors = Vec::new();
+
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                if dx == 0 && dy == 0 {
+                    continue; // Skip the center cell
+                }
+
+                let nx = x as i32 + dx;
+                let ny = y as i32 + dy;
+
+                if nx >= 0 && ny >= 0 {
+                    let ux = nx as usize;
+                    let uy = ny as usize;
+                    if ux < self.config.width && uy < self.config.height {
+                        neighbors.push((ux, uy));
+                    }
+                }
+            }
+        }
+
+        neighbors
+    }
+
+    /// Count anomaly cells in the grid
+    pub fn count_anomalies(&self) -> usize {
+        self.cells.iter().filter(|cell| cell.is_anomaly()).count()
+    }
+
+    /// Clear all cells to normal state
+    pub fn clear(&mut self, timestamp: Timestamp) {
+        for cell in &mut self.cells {
+            cell.update_state(CellState::Normal, timestamp);
+        }
+        self.metrics.operations_count += 1;
+    }
+
+    /// Get performance metrics
+    pub fn metrics(&self) -> &PerformanceMetrics {
+        &self.metrics
+    }
+
+    /// Update performance metrics
+    pub fn update_metrics(&mut self, metrics: PerformanceMetrics) {
+        self.metrics = metrics;
+    }
+
+    /// Check for stale cells that haven't been updated recently
+    pub fn find_stale_cells(&self, current_time: Timestamp) -> Vec<(usize, usize)> {
+        let mut stale_cells = Vec::new();
+
+        for y in 0..self.config.height {
+            for x in 0..self.config.width {
+                let cell = &self.cells[y * self.config.width + x];
+                if cell.age(current_time) > self.config.max_cell_age_ms {
+                    stale_cells.push((x, y));
+                }
+            }
+        }
+
+        stale_cells
+    }
+
+    /// Create an iterator over all cells with their coordinates
+    pub fn iter_cells(&self) -> impl Iterator<Item = (usize, usize, &AnomalyCell)> {
+        self.cells.iter().enumerate().map(move |(index, cell)| {
+            let x = index % self.config.width;
+            let y = index / self.config.width;
+            (x, y, cell)
+        })
     }
 }
 
-/// Get current timestamp in milliseconds (placeholder for actual time source)
-pub fn get_timestamp() -> Timestamp {
-    // In real implementation, this would interface with spacecraft time
-    // For now, use a simple counter or system time
-    static mut COUNTER: u64 = 0;
-    unsafe {
-        COUNTER += 1;
-        COUNTER
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cell_state_conversion() {
+        assert_eq!(CellState::from(0), CellState::Normal);
+        assert_eq!(CellState::from(1), CellState::Anomaly);
+        assert_eq!(u8::from(CellState::Anomaly), 1);
+    }
+
+    #[test]
+    fn test_anomaly_cell_creation() {
+        let cell = AnomalyCell::new(CellState::Anomaly, 1000);
+        assert!(cell.is_anomaly());
+        assert!(cell.is_available());
+        assert_eq!(cell.age(1500), 500);
+    }
+
+    #[test]
+    fn test_grid_creation() {
+        let config = GridConfig {
+            width: 10,
+            height: 10,
+            max_cell_age_ms: 1000,
+            default_confidence: 200,
+        };
+
+        let grid = AnomalyGrid::new(config).unwrap();
+        assert_eq!(grid.dimensions(), (10, 10));
+        assert_eq!(grid.cell_count(), 100);
+    }
+
+    #[test]
+    fn test_grid_bounds_checking() {
+        let grid = AnomalyGrid::default().unwrap();
+        let (width, height) = grid.dimensions();
+
+        assert!(grid.is_valid_coord(0, 0));
+        assert!(grid.is_valid_coord(width - 1, height - 1));
+        assert!(!grid.is_valid_coord(width, height));
+    }
+
+    #[test]
+    fn test_cell_operations() {
+        let mut grid = AnomalyGrid::default().unwrap();
+
+        // Set a cell to anomaly state
+        grid.set_cell(5, 5, CellState::Anomaly, 1000).unwrap();
+        assert!(grid.is_anomaly(5, 5).unwrap());
+
+        // Count anomalies
+        assert_eq!(grid.count_anomalies(), 1);
+
+        // Clear grid
+        grid.clear(2000);
+        assert_eq!(grid.count_anomalies(), 0);
+    }
+
+    #[test]
+    fn test_neighbors() {
+        let grid = AnomalyGrid::default().unwrap();
+
+        // Test 4-connectivity
+        let neighbors_4 = grid.get_neighbors_4(5, 5);
+        assert_eq!(neighbors_4.len(), 4);
+
+        // Test 8-connectivity
+        let neighbors_8 = grid.get_neighbors_8(5, 5);
+        assert_eq!(neighbors_8.len(), 8);
+
+        // Test corner cell (fewer neighbors)
+        let corner_neighbors = grid.get_neighbors_4(0, 0);
+        assert_eq!(corner_neighbors.len(), 2);
     }
 }

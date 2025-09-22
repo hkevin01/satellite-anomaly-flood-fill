@@ -4,87 +4,57 @@
 extern crate alloc;
 
 use core::fmt;
-use thiserror::Error;
-
-#[cfg(feature = "no_std")]
-use alloc::vec::Vec;
-
-/// Timestamp type for performance tracking
-pub type Timestamp = u64;
 
 /// Error types for flood-fill operations
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloodFillError {
-    #[error("Stack overflow: region too large (>{max_size} cells)")]
-    StackOverflow { max_size: usize },
-    
-    #[error("Invalid grid dimensions: {width}x{height}")]
-    InvalidDimensions { width: usize, height: usize },
-    
-    #[error("Start position ({x}, {y}) out of bounds for {width}x{height} grid")]
-    StartOutOfBounds { x: usize, y: usize, width: usize, height: usize },
-    
-    #[error("Operation timeout after {timeout_ms}ms")]
-    Timeout { timeout_ms: u64 },
-    
-    #[error("Memory allocation failed")]
-    MemoryError,
-    
-    #[error("Invalid visited buffer size: expected {expected}, got {actual}")]
-    InvalidVisitedSize { expected: usize, actual: usize },
+    /// Stack overflow during flood-fill operation
+    StackOverflow,
+    /// Invalid grid coordinates
+    InvalidCoordinates,
+    /// Grid dimensions too large
+    GridTooLarge,
+    /// Memory allocation failure
+    OutOfMemory,
+    /// Operation timeout
+    Timeout,
 }
 
-/// Result type for flood-fill operations
-pub type Result<T> = core::result::Result<T, FloodFillError>;
-
-/// Performance metrics for flood-fill operations
-#[derive(Clone, Copy, Debug, Default)]
-pub struct FloodFillMetrics {
-    /// Execution time in microseconds
-    pub execution_time_us: u64,
-    /// Number of cells processed
-    pub cells_processed: usize,
-    /// Stack usage high watermark
-    pub max_stack_depth: usize,
-    /// Number of boundary checks performed
-    pub boundary_checks: u64,
-    /// Memory bytes used for operation
-    pub memory_used: usize,
-}
-
-/// Enhanced region statistics with comprehensive metrics
-#[derive(Clone, Copy, Debug)]
-pub struct RegionStats {
-    /// Number of cells in the region
-    pub count: usize,
-    /// Sum of X coordinates for centroid calculation
-    pub sum_x: u64,
-    /// Sum of Y coordinates for centroid calculation  
-    pub sum_y: u64,
-    /// Minimum X coordinate (bounding box)
-    pub min_x: usize,
-    /// Minimum Y coordinate (bounding box)
-    pub min_y: usize,
-    /// Maximum X coordinate (bounding box)
-    pub max_x: usize,
-    /// Maximum Y coordinate (bounding box)
-    pub max_y: usize,
-    /// Perimeter length (approximate)
-    pub perimeter: usize,
-    /// Timestamp when region was detected
-    pub detection_time: Timestamp,
-    /// Performance metrics for this fill
-    pub metrics: FloodFillMetrics,
-}
-
-impl Default for RegionStats {
-    fn default() -> Self {
-        Self::new()
+impl fmt::Display for FloodFillError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FloodFillError::StackOverflow => write!(f, "Stack overflow during flood-fill"),
+            FloodFillError::InvalidCoordinates => write!(f, "Invalid grid coordinates"),
+            FloodFillError::GridTooLarge => write!(f, "Grid dimensions exceed limits"),
+            FloodFillError::OutOfMemory => write!(f, "Memory allocation failure"),
+            FloodFillError::Timeout => write!(f, "Operation timed out"),
+        }
     }
 }
 
+/// Statistics for a connected region found by flood-fill
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RegionStats {
+    /// Number of cells in the region
+    pub count: usize,
+    /// Sum of x coordinates (for centroid calculation)
+    pub sum_x: usize,
+    /// Sum of y coordinates (for centroid calculation)
+    pub sum_y: usize,
+    /// Minimum x coordinate (bounding box)
+    pub min_x: usize,
+    /// Minimum y coordinate (bounding box)
+    pub min_y: usize,
+    /// Maximum x coordinate (bounding box)
+    pub max_x: usize,
+    /// Maximum y coordinate (bounding box)
+    pub max_y: usize,
+    /// Perimeter cell count
+    pub perimeter: usize,
+}
+
 impl RegionStats {
-    /// Create new empty region statistics
+    /// Create a new empty region statistics tracker
     pub fn new() -> Self {
         Self {
             count: 0,
@@ -95,45 +65,37 @@ impl RegionStats {
             max_x: 0,
             max_y: 0,
             perimeter: 0,
-            detection_time: get_timestamp(),
-            metrics: FloodFillMetrics::default(),
         }
     }
-    
-    /// Add a cell to the region statistics with overflow protection
-    pub fn add(&mut self, x: usize, y: usize) -> Result<()> {
-        // Check for potential overflow
-        if self.count == usize::MAX {
-            return Err(FloodFillError::StackOverflow { max_size: usize::MAX });
-        }
-        
+
+    /// Add a cell to the region statistics
+    pub fn add_cell(&mut self, x: usize, y: usize, is_perimeter: bool) {
         self.count += 1;
-        
-        // Use saturating arithmetic to prevent overflow
-        self.sum_x = self.sum_x.saturating_add(x as u64);
-        self.sum_y = self.sum_y.saturating_add(y as u64);
-        
+        self.sum_x += x;
+        self.sum_y += y;
         self.min_x = self.min_x.min(x);
         self.min_y = self.min_y.min(y);
         self.max_x = self.max_x.max(x);
         self.max_y = self.max_y.max(y);
-        
-        Ok(())
+
+        if is_perimeter {
+            self.perimeter += 1;
+        }
     }
-    
-    /// Calculate region centroid with error handling
+
+    /// Calculate the centroid of the region
     pub fn centroid(&self) -> Option<(f32, f32)> {
         if self.count == 0 {
             None
         } else {
             Some((
                 self.sum_x as f32 / self.count as f32,
-                self.sum_y as f32 / self.count as f32
+                self.sum_y as f32 / self.count as f32,
             ))
         }
     }
-    
-    /// Get bounding box dimensions
+
+    /// Get the bounding box of the region
     pub fn bounding_box(&self) -> Option<(usize, usize, usize, usize)> {
         if self.count == 0 {
             None
@@ -141,178 +103,232 @@ impl RegionStats {
             Some((self.min_x, self.min_y, self.max_x, self.max_y))
         }
     }
-    
-    /// Calculate bounding box area
-    pub fn bounding_area(&self) -> usize {
-        if self.count == 0 {
-            0
-        } else {
-            (self.max_x - self.min_x + 1) * (self.max_y - self.min_y + 1)
-        }
+
+    /// Get the area of the region
+    pub fn area(&self) -> usize {
+        self.count
     }
-    
-    /// Calculate aspect ratio of bounding box
-    pub fn aspect_ratio(&self) -> Option<f32> {
-        if self.count == 0 {
-            None
-        } else {
-            let width = (self.max_x - self.min_x + 1) as f32;
-            let height = (self.max_y - self.min_y + 1) as f32;
-            Some(width / height.max(1.0))
-        }
-    }
-    
-    /// Calculate fill density (region cells / bounding box area)
-    pub fn density(&self) -> f32 {
-        let bbox_area = self.bounding_area();
-        if bbox_area == 0 {
+
+    /// Calculate the compactness ratio (area / perimeter²)
+    pub fn compactness(&self) -> f32 {
+        if self.perimeter == 0 {
             0.0
         } else {
-            self.count as f32 / bbox_area as f32
-        }
-    }
-    
-    /// Check if region is compact (high density, low aspect ratio)
-    pub fn is_compact(&self) -> bool {
-        let density = self.density();
-        let aspect = self.aspect_ratio().unwrap_or(1.0);
-        density > 0.5 && aspect >= 0.5 && aspect <= 2.0
-    }
-}
-
-impl fmt::Display for RegionStats {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some((cx, cy)) = self.centroid() {
-            write!(f, "Region: {} cells, centroid ({:.1}, {:.1}), bbox ({}, {}) to ({}, {})",
-                   self.count, cx, cy, self.min_x, self.min_y, self.max_x, self.max_y)
-        } else {
-            write!(f, "Empty region")
+            self.count as f32 / (self.perimeter as f32 * self.perimeter as f32)
         }
     }
 }
 
-/// Connectivity type for flood-fill algorithms
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Connectivity {
-    /// 4-connected (N, E, S, W neighbors)
-    Four,
-    /// 8-connected (including diagonals)
-    Eight,
+/// Performance metrics for flood-fill operations
+#[derive(Debug, Clone, Copy)]
+pub struct FloodFillMetrics {
+    /// Number of cells processed
+    pub cells_processed: usize,
+    /// Number of stack operations
+    pub stack_operations: usize,
+    /// Peak stack depth
+    pub peak_stack_depth: usize,
+    /// Processing time in microseconds (only available with std feature)
+    pub processing_time_us: u64,
+    /// Memory usage in bytes
+    pub memory_usage_bytes: usize,
 }
 
-/// Enhanced flood-fill with 4-connectivity
+impl Default for FloodFillMetrics {
+    fn default() -> Self {
+        Self {
+            cells_processed: 0,
+            stack_operations: 0,
+            peak_stack_depth: 0,
+            processing_time_us: 0,
+            memory_usage_bytes: 0,
+        }
+    }
+}
+
+/// Configuration for flood-fill operations
+#[derive(Debug, Clone, Copy)]
+pub struct FloodFillConfig {
+    /// Maximum number of cells to process before timeout
+    pub max_cells: usize,
+    /// Maximum stack depth allowed
+    pub max_stack_depth: usize,
+    /// Whether to use 8-connectivity (includes diagonals)
+    pub use_8_connectivity: bool,
+}
+
+impl Default for FloodFillConfig {
+    fn default() -> Self {
+        Self {
+            max_cells: 65536,
+            max_stack_depth: 8192,
+            use_8_connectivity: false,
+        }
+    }
+}
+
+/// Result of a flood-fill operation
+pub type FloodFillResult = Result<(RegionStats, FloodFillMetrics), FloodFillError>;
+
+/// Get current timestamp in milliseconds (for compatibility)
+pub fn get_timestamp() -> u64 {
+    #[cfg(all(feature = "std", not(feature = "no_std")))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    #[cfg(feature = "no_std")]
+    {
+        // In no_std, return 0 or implement with a hardware timer
+        0
+    }
+}
+
+/// Perform flood-fill with 4-connectivity (N,E,S,W neighbors)
 pub fn flood_fill_4conn<F>(
     width: usize,
     height: usize,
-    is_anom: F,
+    is_target: F,
     visited: &mut [u8],
     start_x: usize,
     start_y: usize,
-) -> Result<RegionStats>
+    config: &FloodFillConfig,
+) -> FloodFillResult
 where
     F: FnMut(usize, usize) -> bool,
 {
-    flood_fill_with_connectivity(
-        width, height, is_anom, visited, start_x, start_y, Connectivity::Four
-    )
+    let mut config_4conn = *config;
+    config_4conn.use_8_connectivity = false;
+    flood_fill_impl(width, height, is_target, visited, start_x, start_y, &config_4conn)
 }
 
-/// Enhanced flood-fill with 8-connectivity
+/// Perform flood-fill with 8-connectivity (including diagonal neighbors)
 pub fn flood_fill_8conn<F>(
     width: usize,
     height: usize,
-    is_anom: F,
+    is_target: F,
     visited: &mut [u8],
     start_x: usize,
     start_y: usize,
-) -> Result<RegionStats>
+    config: &FloodFillConfig,
+) -> FloodFillResult
 where
     F: FnMut(usize, usize) -> bool,
 {
-    flood_fill_with_connectivity(
-        width, height, is_anom, visited, start_x, start_y, Connectivity::Eight
-    )
+    let mut config_8conn = *config;
+    config_8conn.use_8_connectivity = true;
+    flood_fill_impl(width, height, is_target, visited, start_x, start_y, &config_8conn)
 }
 
-/// Generic flood-fill implementation with configurable connectivity
-pub fn flood_fill_with_connectivity<F>(
+/// Internal implementation of flood-fill algorithm
+fn flood_fill_impl<F>(
     width: usize,
     height: usize,
-    mut is_anom: F,
+    mut is_target: F,
     visited: &mut [u8],
     start_x: usize,
     start_y: usize,
-    connectivity: Connectivity,
-) -> Result<RegionStats>
+    config: &FloodFillConfig,
+) -> FloodFillResult
 where
     F: FnMut(usize, usize) -> bool,
 {
-    let start_time = get_timestamp();
-    let mut metrics = FloodFillMetrics::default();
-    
-    // Input validation
+    // Validate inputs
     if width == 0 || height == 0 {
-        return Err(FloodFillError::InvalidDimensions { width, height });
+        return Err(FloodFillError::InvalidCoordinates);
     }
-    
+
+    if width > 65536 || height > 65536 || width * height > config.max_cells {
+        return Err(FloodFillError::GridTooLarge);
+    }
+
     if start_x >= width || start_y >= height {
-        return Err(FloodFillError::StartOutOfBounds { 
-            x: start_x, y: start_y, width, height 
-        });
+        return Err(FloodFillError::InvalidCoordinates);
     }
-    
-    let grid_size = width * height;
-    if visited.len() != grid_size {
-        return Err(FloodFillError::InvalidVisitedSize {
-            expected: grid_size,
-            actual: visited.len()
-        });
+
+    if visited.len() != width * height {
+        return Err(FloodFillError::InvalidCoordinates);
     }
-    
-    // Simple stack for no_std compatibility
+
+    #[cfg(all(feature = "std", not(feature = "no_std")))]
+    let start_time = std::time::Instant::now();
+
+    #[cfg(feature = "heapless")]
+    let mut stack: heapless::Vec<(usize, usize), 8192> = heapless::Vec::new();
+
+    #[cfg(not(feature = "heapless"))]
     let mut stack = Vec::new();
+
     let mut stats = RegionStats::new();
-    
+    let mut metrics = FloodFillMetrics::default();
+
     let start_idx = start_y * width + start_x;
-    
-    // Check if starting point is valid and not already visited
-    if visited[start_idx] != 0 || !is_anom(start_x, start_y) {
-        stats.metrics = metrics;
-        return Ok(stats);
-    }
-    
-    // Initialize flood-fill
-    stack.push((start_x, start_y));
-    visited[start_idx] = 1;
-    metrics.cells_processed += 1;
-    
-    // Main flood-fill loop with timeout protection
-    const MAX_ITERATIONS: usize = 100_000;
-    let mut iterations = 0;
-    
-    while let Some((x, y)) = stack.pop() {
-        iterations += 1;
-        if iterations > MAX_ITERATIONS {
-            return Err(FloodFillError::Timeout { timeout_ms: 1000 });
+
+    // Check if starting position is valid and unvisited
+    if visited[start_idx] != 0 || !is_target(start_x, start_y) {
+        #[cfg(all(feature = "std", not(feature = "no_std")))]
+        {
+            metrics.processing_time_us = start_time.elapsed().as_micros() as u64;
         }
-        
-        // Add current cell to region
-        stats.add(x, y)?;
-        
-        // Track stack depth
-        metrics.max_stack_depth = metrics.max_stack_depth.max(stack.len());
-        
+        return Ok((stats, metrics));
+    }
+
+    // Initialize flood-fill
+    #[cfg(feature = "heapless")]
+    {
+        if stack.push((start_x, start_y)).is_err() {
+            return Err(FloodFillError::StackOverflow);
+        }
+    }
+
+    #[cfg(not(feature = "heapless"))]
+    {
+        stack.push((start_x, start_y));
+    }
+
+    visited[start_idx] = 1;
+    metrics.stack_operations += 1;
+    metrics.peak_stack_depth = 1;
+
+    while let Some((x, y)) = stack.pop() {
+        metrics.stack_operations += 1;
+        metrics.cells_processed += 1;
+
+        // Check if we've processed too many cells
+        if metrics.cells_processed > config.max_cells {
+            return Err(FloodFillError::OutOfMemory);
+        }
+
+        // Check if this is a perimeter cell
+        let is_perimeter = is_perimeter_cell(x, y, width, height, &mut is_target);
+        stats.add_cell(x, y, is_perimeter);
+
         // Get neighbors based on connectivity
-        let neighbors = match connectivity {
-            Connectivity::Four => get_4_neighbors(x as i32, y as i32),
-            Connectivity::Eight => get_8_neighbors(x as i32, y as i32),
+        let neighbors: &[(i32, i32)] = if config.use_8_connectivity {
+            &[
+                (x as i32, y as i32 - 1),     // North
+                (x as i32 + 1, y as i32 - 1), // Northeast
+                (x as i32 + 1, y as i32),     // East
+                (x as i32 + 1, y as i32 + 1), // Southeast
+                (x as i32, y as i32 + 1),     // South
+                (x as i32 - 1, y as i32 + 1), // Southwest
+                (x as i32 - 1, y as i32),     // West
+                (x as i32 - 1, y as i32 - 1), // Northwest
+            ]
+        } else {
+            &[
+                (x as i32, y as i32 - 1), // North
+                (x as i32 + 1, y as i32), // East
+                (x as i32, y as i32 + 1), // South
+                (x as i32 - 1, y as i32), // West
+            ]
         };
-        
-        // Process each neighbor
-        for (nx, ny) in neighbors {
-            metrics.boundary_checks += 1;
-            
-            // Bounds checking
+
+        for &(nx, ny) in neighbors {
+            // Bounds check
             if nx < 0 || ny < 0 {
                 continue;
             }
@@ -321,106 +337,152 @@ where
             if ux >= width || uy >= height {
                 continue;
             }
-            
+
             let nidx = uy * width + ux;
-            
+
             // Skip if already visited
             if visited[nidx] != 0 {
                 continue;
             }
-            
-            // Check if neighbor is anomalous
-            if !is_anom(ux, uy) {
+
+            // Skip if not a target cell
+            if !is_target(ux, uy) {
                 continue;
             }
-            
+
             // Mark as visited and add to stack
             visited[nidx] = 1;
-            metrics.cells_processed += 1;
-            
-            stack.push((ux, uy));
+
+            #[cfg(feature = "heapless")]
+            {
+                if stack.push((ux, uy)).is_err() {
+                    return Err(FloodFillError::StackOverflow);
+                }
+            }
+
+            #[cfg(not(feature = "heapless"))]
+            {
+                stack.push((ux, uy));
+            }
+
+            metrics.stack_operations += 1;
+            metrics.peak_stack_depth = metrics.peak_stack_depth.max(stack.len());
+
+            // Check stack depth limit
+            if stack.len() > config.max_stack_depth {
+                return Err(FloodFillError::StackOverflow);
+            }
         }
     }
-    
-    // Calculate execution time
-    let end_time = get_timestamp();
-    metrics.execution_time_us = end_time.saturating_sub(start_time);
-    metrics.memory_used = stack.capacity() * core::mem::size_of::<(usize, usize)>();
-    
-    stats.metrics = metrics;
-    Ok(stats)
+
+    #[cfg(all(feature = "std", not(feature = "no_std")))]
+    {
+        metrics.processing_time_us = start_time.elapsed().as_micros() as u64;
+    }
+
+    metrics.memory_usage_bytes = stack.capacity() * core::mem::size_of::<(usize, usize)>()
+        + visited.len() * core::mem::size_of::<u8>();
+
+    Ok((stats, metrics))
 }
 
-/// Get 4-connected neighbors (N, E, S, W)
-fn get_4_neighbors(x: i32, y: i32) -> Vec<(i32, i32)> {
-    vec![
-        (x, y - 1),     // North
-        (x + 1, y),     // East
-        (x, y + 1),     // South
-        (x - 1, y),     // West
-    ]
-}
-
-/// Get 8-connected neighbors (including diagonals)
-fn get_8_neighbors(x: i32, y: i32) -> Vec<(i32, i32)> {
-    vec![
-        (x - 1, y - 1), // NW
-        (x, y - 1),     // N
-        (x + 1, y - 1), // NE
-        (x + 1, y),     // E
-        (x + 1, y + 1), // SE
-        (x, y + 1),     // S
-        (x - 1, y + 1), // SW
-        (x - 1, y),     // W
-    ]
-}
-
-/// Batch flood-fill for finding all connected components in a grid
-pub fn find_all_components<F>(
-    width: usize,
-    height: usize,
-    mut is_anom: F,
-    connectivity: Connectivity,
-) -> Result<Vec<RegionStats>>
+/// Check if a cell is on the perimeter of the region
+fn is_perimeter_cell<F>(x: usize, y: usize, width: usize, height: usize, is_target: &mut F) -> bool
 where
-    F: FnMut(usize, usize) -> bool + Copy,
+    F: FnMut(usize, usize) -> bool,
 {
-    let grid_size = width * height;
-    let mut visited = vec![0u8; grid_size];
-    let mut components = Vec::new();
-    
-    // Iterate through all cells to find unvisited anomalous regions
-    for y in 0..height {
-        for x in 0..width {
-            let idx = y * width + x;
-            
-            // Skip if already visited or not anomalous
-            if visited[idx] != 0 || !is_anom(x, y) {
-                continue;
-            }
-            
-            // Found new component - perform flood-fill
-            let stats = flood_fill_with_connectivity(
-                width, height, is_anom, &mut visited, x, y, connectivity
-            )?;
-            
-            // Only add non-empty components
-            if stats.count > 0 {
-                components.push(stats);
-            }
+    // Cell is on perimeter if it's at grid boundary or has non-target neighbors
+    if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+        return true;
+    }
+
+    let neighbors = [
+        (x, y.wrapping_sub(1)), // North
+        (x + 1, y),             // East
+        (x, y + 1),             // South
+        (x.wrapping_sub(1), y), // West
+    ];
+
+    for (nx, ny) in neighbors {
+        if nx < width && ny < height && !is_target(nx, ny) {
+            return true;
         }
     }
-    
-    Ok(components)
+
+    false
 }
 
-/// Get current timestamp (placeholder implementation)
-pub fn get_timestamp() -> Timestamp {
-    // In real spacecraft implementation, this would interface with mission time
-    // For now, use a simple monotonic counter
-    static mut COUNTER: Timestamp = 0;
-    unsafe {
-        COUNTER += 1;
-        COUNTER
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(not(feature = "no_std"))]
+    use std::vec;
+
+    #[cfg(feature = "no_std")]
+    use alloc::vec;
+
+    #[test]
+    fn test_region_stats_empty() {
+        let stats = RegionStats::new();
+        assert_eq!(stats.count, 0);
+        assert_eq!(stats.centroid(), None);
+        assert_eq!(stats.bounding_box(), None);
+    }
+
+    #[test]
+    fn test_region_stats_single_cell() {
+        let mut stats = RegionStats::new();
+        stats.add_cell(5, 3, false);
+
+        assert_eq!(stats.count, 1);
+        assert_eq!(stats.centroid(), Some((5.0, 3.0)));
+        assert_eq!(stats.bounding_box(), Some((5, 3, 5, 3)));
+    }
+
+    #[test]
+    fn test_flood_fill_4conn_simple() {
+        let width = 5;
+        let height = 5;
+        let mut visited = vec![0u8; width * height];
+        let config = FloodFillConfig::default();
+
+        // Create a simple 2x2 anomaly region
+        let anomaly_cells = [(1, 1), (1, 2), (2, 1), (2, 2)];
+        let is_anomaly = |x: usize, y: usize| anomaly_cells.contains(&(x, y));
+
+        let result = flood_fill_4conn(
+            width,
+            height,
+            is_anomaly,
+            &mut visited,
+            1,
+            1,
+            &config
+        );
+
+        assert!(result.is_ok());
+        let (stats, _metrics) = result.unwrap();
+        assert_eq!(stats.count, 4);
+        assert_eq!(stats.centroid(), Some((1.5, 1.5)));
+    }
+
+    #[test]
+    fn test_flood_fill_error_conditions() {
+        let mut visited = vec![0u8; 25];
+        let config = FloodFillConfig::default();
+        let is_target = |_x: usize, _y: usize| true;
+
+        // Test invalid coordinates
+        let result = flood_fill_4conn(5, 5, is_target, &mut visited, 10, 10, &config);
+        assert_eq!(result.unwrap_err(), FloodFillError::InvalidCoordinates);
+
+        // Test grid too large
+        let large_config = FloodFillConfig {
+            max_cells: 10,
+            ..config
+        };
+        let result = flood_fill_4conn(5, 5, is_target, &mut visited, 0, 0, &large_config);
+        assert_eq!(result.unwrap_err(), FloodFillError::GridTooLarge);
     }
 }
