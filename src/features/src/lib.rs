@@ -462,7 +462,13 @@ mod tests {
         let (components, metrics) = result.unwrap();
         assert_eq!(components.len(), 1);
         assert_eq!(components[0].stats.area(), 4);
+        // Time metrics are only available with std feature
+        #[cfg(all(feature = "std", not(feature = "no_std")))]
         assert!(metrics.total_time_us > 0);
+
+        // In no_std mode, time metrics will be 0
+        #[cfg(feature = "no_std")]
+        assert_eq!(metrics.total_time_us, 0);
     }
 
     #[test]
