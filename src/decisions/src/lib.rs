@@ -69,6 +69,9 @@ impl core::fmt::Display for DecisionError {
     }
 }
 
+#[cfg(not(feature = "no_std"))]
+impl std::error::Error for DecisionError {}
+
 /// Result type for decision operations
 pub type DecisionResult<T> = Result<T, DecisionError>;
 

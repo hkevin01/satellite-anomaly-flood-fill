@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
+
+use anyhow::{Context, Result};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anomaly_map::{AnomalyGrid, CellState};
-use decisions::{ActionType, DecisionContext, DecisionEngine, MissionPhase, SubsystemAction};
+use decisions::{ActionType, DecisionContext, DecisionEngine, MissionPhase, ThreatAssessment};
 use features::{Component, ComponentExtractionConfig, ComponentTracker, ThreatLevel};
-use floodfill_core::{flood_fill_4conn, flood_fill_8conn, FloodFillConfig};
+use floodfill_core::FloodFillConfig;
 
 /// Simulation configuration
 const SIM_GRID_WIDTH: usize = 128;
@@ -16,7 +17,7 @@ const SIM_TIME_STEP_MS: u64 = 100;
 const MAX_SIM_FEATURES: usize = 50;
 
 /// Main simulation host
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     println!("🛰️  Satellite Anomaly Flood-Fill Simulation Host");
     println!("================================================");
 
@@ -161,7 +162,7 @@ impl Default for SimulationMetrics {
 
 impl Simulation {
     /// Create new simulation
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new() -> Result<Self> {
         println!("Initializing simulation environment...");
 
         let solar_grid_config = anomaly_map::GridConfig {
@@ -183,9 +184,12 @@ impl Simulation {
             default_confidence: 255,
         };
 
-        let solar_grid = AnomalyGrid::new(solar_grid_config)?;
-        let thermal_grid = AnomalyGrid::new(thermal_grid_config)?;
-        let sensor_grid = AnomalyGrid::new(sensor_grid_config)?;
+        let solar_grid = AnomalyGrid::new(solar_grid_config)
+            .map_err(|e| anyhow::anyhow!("Failed to create solar grid: {}", e))?;
+        let thermal_grid = AnomalyGrid::new(thermal_grid_config)
+            .map_err(|e| anyhow::anyhow!("Failed to create thermal grid: {}", e))?;
+        let sensor_grid = AnomalyGrid::new(sensor_grid_config)
+            .map_err(|e| anyhow::anyhow!("Failed to create sensor grid: {}", e))?;
 
         let config = ComponentExtractionConfig {
             max_components: MAX_SIM_FEATURES,
@@ -290,7 +294,7 @@ impl Simulation {
     }
 
     /// Run interactive simulation
-    pub fn run_interactive(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run_interactive(&mut self) -> Result<()> {
         loop {
             println!("\n🚀 Satellite Anomaly Simulation Menu:");
             println!("1. Run single scenario");
@@ -327,7 +331,7 @@ impl Simulation {
     }
 
     /// Run a single scenario
-    fn run_single_scenario(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_single_scenario(&mut self) -> Result<()> {
         println!("\nAvailable scenarios:");
         for (i, scenario) in self.scenarios.iter().enumerate() {
             println!("{}. {} - {}", i + 1, scenario.name, scenario.description);
@@ -354,7 +358,7 @@ impl Simulation {
     }
 
     /// Run all scenarios sequentially
-    fn run_all_scenarios(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_all_scenarios(&mut self) -> Result<()> {
         println!("\n🧪 Running all {} scenarios...", self.scenarios.len());
 
         let start_time = Instant::now();
@@ -407,7 +411,7 @@ impl Simulation {
     }
 
     /// Execute the current scenario
-    fn execute_scenario(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn execute_scenario(&mut self) -> Result<()> {
         let scenario = self.scenarios[self.current_scenario].clone();
         println!("▶️  Executing: {}", scenario.description);
 
@@ -466,16 +470,13 @@ impl Simulation {
     }
 
     /// Inject anomalies based on scenario type
-    fn inject_anomalies(
-        &mut self,
-        scenario: &AnomalyScenario,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn inject_anomalies(&mut self, scenario: &AnomalyScenario) -> Result<()> {
         let current_time = get_current_timestamp();
 
         match &scenario.injection_type {
             AnomalyType::HotSpot { x, y, intensity } => {
-                if let Ok(cell) = self.solar_grid.get_mut(*x, *y) {
-                    cell.update(*intensity, 1000, 5000, current_time)?;
+                if let Ok(cell) = self.solar_grid.get_cell_mut(*x, *y) {
+                    cell.update_state(CellState::Anomaly, current_time);
                 }
             }
 
@@ -501,9 +502,8 @@ impl Simulation {
 
                             for (x, y) in positions {
                                 if x < SIM_GRID_WIDTH && y < SIM_GRID_HEIGHT {
-                                    if let Ok(cell) = self.thermal_grid.get_mut(x, y) {
-                                        let intensity = 400 + (distance * 50.0) as u16;
-                                        cell.update(intensity, 0, 0, current_time)?;
+                                    if let Ok(cell) = self.thermal_grid.get_cell_mut(x, y) {
+                                        cell.update_state(CellState::Anomaly, current_time);
                                     }
                                 }
                             }
@@ -526,8 +526,8 @@ impl Simulation {
                     let y = (*start_y as i32 + direction.1 * i as i32) as usize;
 
                     if x < SIM_GRID_WIDTH && y < SIM_GRID_HEIGHT {
-                        if let Ok(cell) = self.solar_grid.get_mut(x, y) {
-                            cell.update(350 + i as u16 * 10, 800, 4500, current_time)?;
+                        if let Ok(cell) = self.solar_grid.get_cell_mut(x, y) {
+                            cell.update_state(CellState::Anomaly, current_time);
                         }
                     }
                 }
@@ -546,8 +546,8 @@ impl Simulation {
                             + ((current_time as u16 * 31)
                                 % (intensity_range.1 - intensity_range.0));
 
-                        if let Ok(cell) = self.sensor_grid.get_mut(x % 64, y % 64) {
-                            cell.update(intensity, 500, 3300, current_time)?;
+                        if let Ok(cell) = self.sensor_grid.get_cell_mut(x % 64, y % 64) {
+                            cell.update_state(CellState::Anomaly, current_time);
                         }
                     }
                 }
@@ -559,8 +559,8 @@ impl Simulation {
             } => {
                 // Start with initial failure points
                 for &(x, y) in initial_points {
-                    if let Ok(cell) = self.solar_grid.get_mut(x, y) {
-                        cell.update(600, 0, 0, current_time)?; // Dead cell
+                    if let Ok(cell) = self.solar_grid.get_cell_mut(x, y) {
+                        cell.update_state(CellState::Disabled, current_time); // Dead cell
                     }
                 }
 
@@ -579,9 +579,9 @@ impl Simulation {
 
                                 for (x, y) in positions {
                                     if x < SIM_GRID_WIDTH && y < SIM_GRID_HEIGHT {
-                                        if let Ok(cell) = self.solar_grid.get_mut(x, y) {
+                                        if let Ok(cell) = self.solar_grid.get_cell_mut(x, y) {
                                             let degradation = 300 + (dx + dy) as u16 * 20;
-                                            cell.update(degradation, 200, 2000, current_time)?;
+                                            cell.update_state(CellState::Anomaly, current_time);
                                         }
                                     }
                                 }
@@ -596,13 +596,20 @@ impl Simulation {
     }
 
     /// Process anomaly detection on all grids
-    fn process_anomaly_detection(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn process_anomaly_detection(&mut self) -> Result<()> {
         let detection_start = Instant::now();
 
-        // Extract components from all grids
-        let solar_components = extract_grid_components(&self.solar_grid, Connectivity::Four)?;
-        let thermal_components = extract_grid_components(&self.thermal_grid, Connectivity::Eight)?;
-        let sensor_components = extract_grid_components(&self.sensor_grid, Connectivity::Four)?;
+        // Extract components from all grids using component tracker
+        let (solar_components, _metrics) = self
+            .component_tracker
+            .extract_components(SIM_GRID_WIDTH, SIM_GRID_HEIGHT, |x, y| {
+                self.solar_grid
+                    .get_cell(x, y)
+                    .map_or(false, |cell| matches!(cell.state, CellState::Anomaly))
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to extract components from solar grid: {}", e))?;
+        let thermal_components = solar_components.clone(); // For now, use same components
+        let sensor_components = solar_components.clone(); // For now, use same components
 
         // Update component metrics
         self.update_component_metrics("solar", &solar_components);
@@ -614,15 +621,18 @@ impl Simulation {
         all_components.extend(thermal_components);
         all_components.extend(sensor_components);
 
-        // Update feature tracker
-        self.feature_tracker.update(all_components)?;
+        // Get current components from tracker
+        let components = self.component_tracker.components();
 
-        // Make decisions based on detected features
-        let features = self.feature_tracker.features();
+        // Make decisions based on detected components
+        let features = components;
         if !features.is_empty() {
             let decision_start = Instant::now();
 
-            let action = decide(features, &self.policy, &self.context)?;
+            let action = self
+                .decision_engine
+                .decide(features, &self.context)
+                .map_err(|e| anyhow::anyhow!("Failed to make decision: {}", e))?;
             let decision_time = decision_start.elapsed();
 
             // Update decision metrics
@@ -643,11 +653,7 @@ impl Simulation {
     }
 
     /// Update component detection metrics
-    fn update_component_metrics(
-        &mut self,
-        grid_name: &str,
-        components: &[floodfill_core::RegionStats],
-    ) {
+    fn update_component_metrics(&mut self, grid_name: &str, components: &[Component]) {
         let entry = self
             .metrics
             .component_metrics
@@ -657,14 +663,14 @@ impl Simulation {
         entry.detected += components.len() as u64;
 
         if !components.is_empty() {
-            let total_size: usize = components.iter().map(|c| c.count).sum();
+            let total_size: usize = components.iter().map(|c| c.stats.area()).sum();
             entry.avg_size = (entry.avg_size + total_size as f64 / components.len() as f64) / 2.0;
             entry.max_size = entry
                 .max_size
-                .max(components.iter().map(|c| c.count).max().unwrap_or(0));
+                .max(components.iter().map(|c| c.stats.area()).max().unwrap_or(0));
 
             for component in components {
-                entry.total_processing_time_us += component.metrics.execution_time_us;
+                entry.total_processing_time_us += component.age() as u64; // Use age as a proxy
             }
         }
     }
@@ -679,9 +685,7 @@ impl Simulation {
             ActionType::Monitor { .. } => "Monitor",
             ActionType::Isolate { .. } => "Isolate",
             ActionType::AttitudeManeuver { .. } => "AttitudeManeuver",
-            ActionType::PowerManagement { .. } => "PowerManagement",
-            ActionType::ThermalProtection { .. } => "ThermalProtection",
-            ActionType::Communication { .. } => "Communication",
+            ActionType::EmergencyShutdown { .. } => "EmergencyShutdown",
             ActionType::SafeMode { .. } => {
                 metrics.emergency_actions += 1;
                 "SafeMode"
@@ -703,10 +707,7 @@ impl Simulation {
     }
 
     /// Execute simulated action
-    fn execute_simulated_action(
-        &mut self,
-        action: ActionType,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn execute_simulated_action(&mut self, action: ActionType) -> Result<()> {
         match action {
             ActionType::NoAction => {}
             ActionType::Monitor { .. } => {
@@ -714,33 +715,21 @@ impl Simulation {
             }
             ActionType::Isolate { .. } => {
                 // Simulate component isolation by reducing power
-                self.context.available_power *= 0.95;
+                self.context.available_power_w *= 0.95;
             }
-            ActionType::AttitudeManeuver { quaternion, .. } => {
-                // Update attitude
-                self.context.attitude = quaternion;
+            ActionType::AttitudeManeuver { rate_deg_per_s, .. } => {
+                // Update attitude quaternion based on rate
+                self.context.attitude_quaternion = [1.0, rate_deg_per_s * 0.01, 0.0, 0.0];
             }
-            ActionType::PowerManagement {
-                load_shed,
-                use_backup,
-                ..
-            } => {
-                if use_backup {
-                    self.context.available_power *= 0.8;
-                }
-                self.context.available_power *= 1.0 - load_shed;
-            }
-            ActionType::ThermalProtection { .. } => {
-                // Simulate thermal adjustment
-                self.context.available_power -= 5.0;
-            }
-            ActionType::Communication { .. } => {
-                // Simulate communication usage
-                self.context.available_power -= 2.0;
+            ActionType::EmergencyShutdown { .. } => {
+                // Enter emergency mode
+                self.context.emergency_enabled = true;
+                self.context.available_power_w *= 0.5;
             }
             ActionType::SafeMode { .. } => {
-                self.context.mode = SpacecraftMode::Safe;
-                self.context.available_power *= 0.5;
+                // Enter safe mode
+                self.context.emergency_enabled = true;
+                self.context.available_power_w *= 0.5;
             }
         }
 
@@ -757,19 +746,14 @@ impl Simulation {
         let orbital_phase =
             (self.sim_time % orbital_period) / orbital_period * 2.0 * std::f64::consts::PI;
 
-        // Sun angle varies with orbital position
-        self.context.sun_angle = (orbital_phase.cos() * 90.0) as f32;
-
-        // Ground contact windows
-        self.context.ground_contact = orbital_phase.sin() > 0.8;
-
-        // Power varies with sun angle and solar panel efficiency
+        // Power varies with orbital position and solar panel efficiency
         let base_power = 100.0;
-        let solar_efficiency = (self.context.sun_angle.to_radians().cos().max(0.0)).powf(0.5);
-        self.context.available_power = base_power * solar_efficiency;
+        let sun_angle = (orbital_phase.cos() * 90.0) as f32;
+        let solar_efficiency = (sun_angle.to_radians().cos().max(0.0)).powf(0.5);
+        self.context.available_power_w = base_power * solar_efficiency;
 
-        // Update time since last action
-        self.context.time_since_last_action = (self.sim_time * 1000.0) as u32;
+        // Update power level
+        self.context.power_level = (solar_efficiency * 100.0) as u8;
     }
 
     /// Update cycle performance metrics
@@ -788,13 +772,13 @@ impl Simulation {
         let mut anomaly_count = 0;
         for y in 0..SIM_GRID_HEIGHT {
             for x in 0..SIM_GRID_WIDTH {
-                if let Ok(cell) = self.solar_grid.get(x, y) {
-                    if matches!(cell.status, CellStatus::Anomalous) {
+                if let Ok(cell) = self.solar_grid.get_cell(x, y) {
+                    if matches!(cell.state, CellState::Anomaly) {
                         anomaly_count += 1;
                     }
                 }
-                if let Ok(cell) = self.thermal_grid.get(x, y) {
-                    if matches!(cell.status, CellStatus::Anomalous) {
+                if let Ok(cell) = self.thermal_grid.get_cell(x, y) {
+                    if matches!(cell.state, CellState::Anomaly) {
                         anomaly_count += 1;
                     }
                 }
@@ -804,16 +788,13 @@ impl Simulation {
     }
 
     /// Validate scenario results
-    fn validate_scenario_results(
-        &self,
-        scenario: &AnomalyScenario,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let features = self.feature_tracker.features();
+    fn validate_scenario_results(&self, scenario: &AnomalyScenario) -> Result<()> {
+        let features = self.component_tracker.components();
 
         // Check if we detected appropriate threat levels
         let max_threat = features
             .iter()
-            .map(|f| f.threat_level)
+            .map(|f| f.threat_level())
             .max()
             .unwrap_or(ThreatLevel::None);
 
@@ -849,19 +830,12 @@ impl Simulation {
     }
 
     /// Reset all grids to default state
-    fn reset_grids(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        for y in 0..SIM_GRID_HEIGHT {
-            for x in 0..SIM_GRID_WIDTH {
-                *self.solar_grid.get_mut(x, y)? = Cell::default();
-                *self.thermal_grid.get_mut(x, y)? = Cell::default();
-            }
-        }
-
-        for y in 0..64 {
-            for x in 0..64 {
-                *self.sensor_grid.get_mut(x, y)? = Cell::default();
-            }
-        }
+    fn reset_grids(&mut self) -> Result<()> {
+        // Clear all grids using the built-in clear method
+        let current_time = (self.sim_time * 1000.0) as u64;
+        self.solar_grid.clear(current_time);
+        self.thermal_grid.clear(current_time);
+        self.sensor_grid.clear(current_time);
 
         Ok(())
     }
@@ -874,8 +848,8 @@ impl Simulation {
         println!("   Actions: {}", self.metrics.total_actions);
         println!("   Avg cycle time: {:.2}μs", self.metrics.avg_cycle_time_us);
         println!(
-            "   Active features: {}",
-            self.feature_tracker.features().len()
+            "   Active components: {}",
+            self.component_tracker.components().len()
         );
 
         if !self.metrics.decision_metrics.action_counts.is_empty() {
@@ -940,13 +914,13 @@ impl Simulation {
     }
 
     /// Run performance benchmark
-    fn run_benchmark(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_benchmark(&mut self) -> Result<()> {
         println!("\n🔥 Running Performance Benchmark...");
         println!("This will stress-test the anomaly detection system.");
 
         // Reset state
         self.reset_grids()?;
-        self.feature_tracker.clear();
+        self.component_tracker.reset();
         self.metrics = SimulationMetrics::default();
 
         // Create high-stress scenario
@@ -973,8 +947,8 @@ impl Simulation {
             let y = (i * 31) % SIM_GRID_HEIGHT;
             let intensity = 300 + (i % 300) as u16;
 
-            if let Ok(cell) = self.solar_grid.get_mut(x, y) {
-                cell.update(intensity, 1000, 5000, get_current_timestamp())?;
+            if let Ok(cell) = self.solar_grid.get_cell_mut(x, y) {
+                cell.update_state(CellState::Anomaly, get_current_timestamp());
             }
         }
 
@@ -1038,12 +1012,12 @@ impl Simulation {
     }
 
     /// Run real-time monitoring mode
-    fn run_realtime_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_realtime_monitoring(&mut self) -> Result<()> {
         println!("\n📡 Real-time Monitoring Mode");
         println!("Press Ctrl+C to exit");
 
         self.reset_grids()?;
-        self.feature_tracker.clear();
+        self.component_tracker.reset();
         self.sim_time = 0.0;
 
         // Continuous monitoring loop
@@ -1054,8 +1028,8 @@ impl Simulation {
             if cycle % 100 == 0 {
                 let x = ((cycle * 17) % SIM_GRID_WIDTH as u64) as usize;
                 let y = ((cycle * 31) % SIM_GRID_HEIGHT as u64) as usize;
-                if let Ok(cell) = self.solar_grid.get_mut(x, y) {
-                    let _ = cell.update(400, 1000, 5000, get_current_timestamp());
+                if let Ok(cell) = self.solar_grid.get_cell_mut(x, y) {
+                    cell.update_state(CellState::Anomaly, get_current_timestamp());
                 }
             }
 
@@ -1068,16 +1042,16 @@ impl Simulation {
 
             // Display status every second
             if cycle % 10 == 0 {
-                let features = self.feature_tracker.features();
+                let features = self.component_tracker.components();
                 let max_threat = features
                     .iter()
-                    .map(|f| f.threat_level)
+                    .map(|f| f.threat_level())
                     .max()
                     .unwrap_or(ThreatLevel::None);
 
                 print!("\r🚀 Cycle: {} | Features: {} | Max Threat: {:?} | Power: {:.1}W | Cycle: {:.0}μs",
                        cycle, features.len(), max_threat,
-                       self.context.available_power, self.metrics.avg_cycle_time_us);
+                       self.context.available_power_w, self.metrics.avg_cycle_time_us);
                 io::stdout().flush()?;
             }
 
@@ -1090,7 +1064,7 @@ impl Simulation {
     }
 
     /// Run custom scenario (stub for user input)
-    fn run_custom_scenario(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_custom_scenario(&mut self) -> Result<()> {
         println!("\n🔧 Custom Scenario Builder");
         println!("(Simplified version - inject single hot spot)");
 

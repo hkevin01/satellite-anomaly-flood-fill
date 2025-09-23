@@ -82,6 +82,9 @@ impl core::fmt::Display for FeatureError {
     }
 }
 
+#[cfg(all(feature = "std", not(feature = "no_std")))]
+impl std::error::Error for FeatureError {}
+
 /// A connected component with statistics and temporal tracking
 #[derive(Clone, Debug)]
 pub struct Component {

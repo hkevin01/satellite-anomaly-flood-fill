@@ -13,9 +13,9 @@ name = "sim_host"
 path = "src/main.rs"
 
 [dependencies]
-anomaly_map = { path = "../anomaly_map" }
+anomaly_map = { path = "../anomaly_map", features = ["std"] }
 floodfill_core = { path = "../floodfill_core" }
-features = { path = "../features" }
+features = { path = "../features", features = ["std"] }
 decisions = { path = "../decisions" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -24,6 +24,7 @@ tokio = { version = "1.35", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rand = "0.8"
+anyhow = "1.0"
 
 [dev-dependencies]
 proptest = "1.4"

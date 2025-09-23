@@ -6,12 +6,12 @@ edition = "2021"
 [features]
 default = ["std"]
 std = []
-no_std = ["heapless"]
+no_std = []
 
 [dependencies]
 floodfill_core = { path = "../floodfill_core" }
 anomaly_map = { path = "../anomaly_map" }
-heapless = { workspace = true, optional = true }
+heapless = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.0"
