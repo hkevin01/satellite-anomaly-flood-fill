@@ -6,10 +6,10 @@ edition = "2021"
 [features]
 default = ["std"]
 std = []
-no_std = ["heapless", "embedded-time"]
+no_std = ["embedded-time"]
 
 [dependencies]
-heapless = { workspace = true, optional = true }
+heapless = { workspace = true }
 embedded-time = { version = "0.12", optional = true }
 
 [dev-dependencies]

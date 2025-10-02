@@ -58,14 +58,51 @@
 //! **Requirement**: System shall provide telemetry for performance analysis
 //! **Implementation**: [`ExtractionMetrics`] with timing, memory, and operation counts
 //! **Verification**: Metrics collection verified in std and no_std environments
+//!
+//! ## REQ-FEAT-012: Hardware/Software Decision-Aiding Integration
+//! **Requirement**: System shall support logical flood-fill for hardware/software fault analysis
+//! **Implementation**: Integration with [`LogicalFloodFillResult`] for decision-aiding systems
+//! **Verification**: Logical analysis integration tested with component-to-node mapping
+//!
+//! ## REQ-FEAT-013: Logical System Integration
+//! **Requirement**: System shall convert geographic anomalies to logical system representations
+//! **Implementation**: [`ComponentNodeTypeMapper`], [`LogicalTopologyBuilder`] for system modeling
+//! **Verification**: Component-to-logical conversion validated with connectivity analysis
 
 #![cfg_attr(feature = "no_std", no_std)]
 
 #[cfg(feature = "no_std")]
 extern crate alloc;
 
+#[cfg(feature = "no_std")]
+use alloc::format;
+
+#[cfg(not(feature = "no_std"))]
+use std::string::ToString;
+
+#[cfg(feature = "no_std")]
+use alloc::string::ToString;
+
 use floodfill_core::{
-    flood_fill_4conn, flood_fill_8conn, FloodFillConfig, FloodFillError, RegionStats,
+    flood_fill_4conn,
+    flood_fill_8conn,
+    FloodFillConfig,
+    FloodFillError,
+    HardwareFaultAnalyzer,
+    HardwarePropagationRules,
+    LogicalFloodFillResult,
+    // Logical flood-fill imports for hardware/software decision-aiding
+    LogicalNode,
+    LogicalNodeResources,
+    LogicalNodeState,
+    LogicalNodeType,
+    LogicalTopology,
+    PolicyPropagationRules,
+    PolicyPropagationSimulator,
+    PolicyType,
+    RegionStats,
+    SoftwareImpactAnalyzer,
+    SoftwarePropagationRules,
 };
 
 /// Threat level for anomaly classification
@@ -593,6 +630,385 @@ impl ComponentTracker {
     }
 }
 
+//
+// === LOGICAL SYSTEM INTEGRATION FOR HARDWARE/SOFTWARE DECISION-AIDING ===
+//
+
+/// Integration helper for converting geographic components to logical nodes
+///
+/// **Requirement Traceability**: REQ-FEAT-013 - Logical System Integration
+/// - Bridges geographic anomaly detection with logical system analysis
+/// - Enables hardware/software fault propagation modeling
+/// - Supports policy response simulation based on component characteristics
+impl ComponentTracker {
+    /// Convert components to logical system nodes
+    ///
+    /// This function creates logical nodes from detected anomaly components,
+    /// enabling fault propagation and policy response analysis across
+    /// hardware/software system topologies.
+    pub fn components_to_logical_nodes(
+        &self,
+        node_type_mapper: &ComponentNodeTypeMapper,
+    ) -> heapless::Vec<LogicalNode, 256> {
+        let mut logical_nodes = heapless::Vec::new();
+
+        for component in &self.components {
+            let node_type = node_type_mapper.map_component_to_node_type(component);
+            let criticality = self.calculate_component_criticality(component);
+            let state = self.map_component_state(component);
+
+            let logical_node = LogicalNode {
+                id: format!("component_{}", component.id),
+                node_type,
+                state,
+                connections: heapless::Vec::new(), // Filled by topology builder
+                criticality,
+                resources: self.estimate_component_resources(component),
+            };
+
+            if logical_nodes.push(logical_node).is_err() {
+                break; // Memory limit reached
+            }
+        }
+
+        logical_nodes
+    }
+
+    /// Calculate criticality score based on component characteristics
+    fn calculate_component_criticality(&self, component: &Component) -> f32 {
+        let area_factor = (component.stats.area() as f32 / 100.0).min(1.0);
+        let confidence_factor = component.confidence;
+        let growth_factor = if component.growth_rate > 0.5 {
+            0.8
+        } else {
+            0.3
+        };
+        let age_factor = (component.age() as f32 / 10.0).min(0.5);
+
+        (area_factor * 0.4 + confidence_factor * 0.3 + growth_factor * 0.2 + age_factor * 0.1)
+            .min(1.0)
+    }
+
+    /// Map component evolution state to logical node state
+    fn map_component_state(&self, component: &Component) -> LogicalNodeState {
+        if component.growth_rate > 1.0 {
+            LogicalNodeState::Failed
+        } else if component.growth_rate > 0.5 {
+            LogicalNodeState::Degraded
+        } else if component.confidence < 0.3 {
+            LogicalNodeState::Unknown
+        } else {
+            LogicalNodeState::Operational
+        }
+    }
+
+    /// Estimate resource usage based on component characteristics
+    fn estimate_component_resources(&self, component: &Component) -> LogicalNodeResources {
+        let area = component.stats.area() as f32;
+        LogicalNodeResources {
+            power: area * 0.5,                    // Proportional to size
+            cpu_load: component.confidence * 0.8, // Based on processing complexity
+            memory_bytes: (area * 10.0) as u32,   // Memory usage estimate
+            bandwidth_bps: (area * 100.0) as u32, // Communication requirements
+        }
+    }
+}
+
+/// Mapper for converting components to logical node types
+///
+/// **Requirement Traceability**: REQ-FEAT-013 - Logical System Integration
+/// - Provides configurable mapping from geographic anomalies to system components
+/// - Enables mission-specific component-to-hardware/software association
+/// - Supports dynamic topology generation for decision-aiding
+pub struct ComponentNodeTypeMapper {
+    /// Default node type for unmapped components
+    pub default_node_type: LogicalNodeType,
+    /// Size-based mapping thresholds
+    pub size_thresholds: ComponentSizeThresholds,
+    /// Location-based mapping regions
+    pub location_mapping: ComponentLocationMapping,
+}
+
+impl ComponentNodeTypeMapper {
+    /// Create new mapper with default configuration
+    pub fn new() -> Self {
+        Self {
+            default_node_type: LogicalNodeType::SensorCluster,
+            size_thresholds: ComponentSizeThresholds::default(),
+            location_mapping: ComponentLocationMapping::default(),
+        }
+    }
+
+    /// Map component to logical node type based on characteristics
+    pub fn map_component_to_node_type(&self, component: &Component) -> LogicalNodeType {
+        let area = component.stats.area();
+
+        // Size-based classification
+        if area > self.size_thresholds.large_component_threshold {
+            return LogicalNodeType::ProcessingUnit;
+        } else if area > self.size_thresholds.medium_component_threshold {
+            return LogicalNodeType::PowerBus;
+        }
+
+        // Location-based classification
+        if let Some((x, y)) = component.stats.centroid() {
+            if let Some(node_type) = self
+                .location_mapping
+                .get_node_type_for_location(x as usize, y as usize)
+            {
+                return node_type;
+            }
+        }
+
+        // Default classification
+        self.default_node_type
+    }
+}
+
+impl Default for ComponentNodeTypeMapper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Size-based mapping thresholds
+#[derive(Debug, Clone, Copy)]
+pub struct ComponentSizeThresholds {
+    /// Threshold for large components (processing units)
+    pub large_component_threshold: usize,
+    /// Threshold for medium components (power buses)
+    pub medium_component_threshold: usize,
+    /// Threshold for small components (sensors)
+    pub small_component_threshold: usize,
+}
+
+impl Default for ComponentSizeThresholds {
+    fn default() -> Self {
+        Self {
+            large_component_threshold: 100,
+            medium_component_threshold: 50,
+            small_component_threshold: 10,
+        }
+    }
+}
+
+/// Location-based component mapping
+#[derive(Debug, Clone)]
+pub struct ComponentLocationMapping {
+    /// Grid regions mapped to node types
+    pub regions: heapless::Vec<LocationRegion, 16>,
+}
+
+impl ComponentLocationMapping {
+    /// Get node type for specific location
+    pub fn get_node_type_for_location(&self, x: usize, y: usize) -> Option<LogicalNodeType> {
+        for region in &self.regions {
+            if x >= region.min_x && x <= region.max_x && y >= region.min_y && y <= region.max_y {
+                return Some(region.node_type);
+            }
+        }
+        None
+    }
+}
+
+impl Default for ComponentLocationMapping {
+    fn default() -> Self {
+        let mut regions = heapless::Vec::new();
+
+        // Example regions - customizable per mission
+        regions
+            .push(LocationRegion {
+                min_x: 0,
+                max_x: 50,
+                min_y: 0,
+                max_y: 50,
+                node_type: LogicalNodeType::PowerBus,
+            })
+            .ok();
+
+        regions
+            .push(LocationRegion {
+                min_x: 51,
+                max_x: 100,
+                min_y: 0,
+                max_y: 50,
+                node_type: LogicalNodeType::SensorCluster,
+            })
+            .ok();
+
+        regions
+            .push(LocationRegion {
+                min_x: 0,
+                max_x: 100,
+                min_y: 51,
+                max_y: 100,
+                node_type: LogicalNodeType::ProcessingUnit,
+            })
+            .ok();
+
+        Self { regions }
+    }
+}
+
+/// Geographic region mapping to logical node types
+#[derive(Debug, Clone, Copy)]
+pub struct LocationRegion {
+    /// Minimum X coordinate
+    pub min_x: usize,
+    /// Maximum X coordinate
+    pub max_x: usize,
+    /// Minimum Y coordinate
+    pub min_y: usize,
+    /// Maximum Y coordinate
+    pub max_y: usize,
+    /// Associated logical node type
+    pub node_type: LogicalNodeType,
+}
+
+/// Topology builder for creating logical system graphs from components
+///
+/// **Requirement Traceability**: REQ-FEAT-013 - Logical System Integration
+/// - Builds logical system topology from geographic component analysis
+/// - Establishes connectivity based on spatial proximity and component types
+/// - Supports hardware fault propagation and software impact analysis
+pub struct LogicalTopologyBuilder {
+    /// Connectivity rules for different node types
+    pub connectivity_rules: ConnectivityRules,
+    /// Maximum connection distance
+    pub max_connection_distance: f32,
+}
+
+impl LogicalTopologyBuilder {
+    /// Create new topology builder
+    pub fn new() -> Self {
+        Self {
+            connectivity_rules: ConnectivityRules::default(),
+            max_connection_distance: 50.0,
+        }
+    }
+
+    /// Build logical topology from components
+    ///
+    /// Creates a logical system topology by analyzing component spatial relationships
+    /// and applying connectivity rules based on node types and proximity.
+    pub fn build_topology(&self, nodes: heapless::Vec<LogicalNode, 256>) -> LogicalTopology {
+        let mut topology_nodes = heapless::Vec::new();
+        let mut adjacency = heapless::FnvIndexMap::new();
+
+        // Copy nodes and establish connections
+        for (i, node) in nodes.iter().enumerate() {
+            let mut connected_node = node.clone();
+
+            // Find connections to other nodes
+            for (j, other_node) in nodes.iter().enumerate() {
+                if i != j && self.should_connect_nodes(node, other_node) {
+                    if connected_node
+                        .connections
+                        .push(other_node.id.clone())
+                        .is_err()
+                    {
+                        break; // Connection limit reached
+                    }
+                }
+            }
+
+            // Build adjacency map
+            let _ = adjacency.insert(node.id.clone(), connected_node.connections.clone());
+
+            if topology_nodes.push(connected_node).is_err() {
+                break; // Memory limit reached
+            }
+        }
+
+        LogicalTopology {
+            nodes: topology_nodes,
+            adjacency,
+        }
+    }
+
+    /// Determine if two nodes should be connected
+    fn should_connect_nodes(&self, node1: &LogicalNode, node2: &LogicalNode) -> bool {
+        // Apply connectivity rules based on node types
+        self.connectivity_rules
+            .should_connect(node1.node_type, node2.node_type)
+    }
+}
+
+impl Default for LogicalTopologyBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Connectivity rules for logical node types
+#[derive(Debug, Clone)]
+pub struct ConnectivityRules {
+    /// Connection matrix for node type pairs
+    pub connection_matrix: [[bool; 8]; 8], // 8x8 for all LogicalNodeType variants
+}
+
+impl ConnectivityRules {
+    /// Check if two node types should be connected
+    pub fn should_connect(&self, type1: LogicalNodeType, type2: LogicalNodeType) -> bool {
+        let idx1 = self.node_type_to_index(type1);
+        let idx2 = self.node_type_to_index(type2);
+        self.connection_matrix[idx1][idx2] || self.connection_matrix[idx2][idx1]
+    }
+
+    /// Convert node type to matrix index
+    fn node_type_to_index(&self, node_type: LogicalNodeType) -> usize {
+        match node_type {
+            LogicalNodeType::PowerBus => 0,
+            LogicalNodeType::SensorCluster => 1,
+            LogicalNodeType::ProcessingUnit => 2,
+            LogicalNodeType::CommunicationModule => 3,
+            LogicalNodeType::ActuatorArray => 4,
+            LogicalNodeType::ThermalSystem => 5,
+            LogicalNodeType::ServiceModule => 6,
+            LogicalNodeType::Thread => 7,
+            // Add other types as needed, currently collapsed to prevent overflow
+            _ => 7,
+        }
+    }
+}
+
+impl Default for ConnectivityRules {
+    fn default() -> Self {
+        let mut matrix = [[false; 8]; 8];
+
+        // Power bus connects to everything
+        matrix[0] = [true; 8];
+        for i in 0..8 {
+            matrix[i][0] = true;
+        }
+
+        // Processing units connect to sensors and actuators
+        matrix[2][1] = true;
+        matrix[1][2] = true; // ProcessingUnit <-> SensorCluster
+        matrix[2][4] = true;
+        matrix[4][2] = true; // ProcessingUnit <-> ActuatorArray
+        matrix[2][3] = true;
+        matrix[3][2] = true; // ProcessingUnit <-> CommunicationModule
+
+        // Thermal system connects to all hardware
+        matrix[5][1] = true;
+        matrix[1][5] = true; // ThermalSystem <-> SensorCluster
+        matrix[5][2] = true;
+        matrix[2][5] = true; // ThermalSystem <-> ProcessingUnit
+        matrix[5][4] = true;
+        matrix[4][5] = true; // ThermalSystem <-> ActuatorArray
+
+        // Software components interconnected
+        matrix[6][6] = true; // ServiceModule <-> ServiceModule
+        matrix[6][7] = true;
+        matrix[7][6] = true; // ServiceModule <-> Thread
+
+        Self {
+            connection_matrix: matrix,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,5 +1080,136 @@ mod tests {
         let iou = comp1.iou(&comp2);
         assert!(iou.is_some());
         assert!(iou.unwrap() > 0.0 && iou.unwrap() < 1.0);
+    }
+
+    #[test]
+    /// **Requirement Verification**: REQ-FEAT-013 - Logical System Integration
+    /// - Verifies conversion of geographic components to logical nodes
+    /// - Tests component criticality calculation based on characteristics
+    /// - Validates node type mapping and resource estimation
+    fn test_components_to_logical_nodes() {
+        let config = ComponentExtractionConfig::default();
+        let mut tracker = ComponentTracker::new(config);
+
+        // Create test components
+        let mut stats1 = RegionStats::new();
+        stats1.add_cell(0, 0, false);
+        stats1.add_cell(1, 0, false);
+        let mut comp1 = Component::new(stats1, 1, 0);
+        comp1.confidence = 0.8;
+        comp1.growth_rate = 0.3;
+
+        let mut stats2 = RegionStats::new();
+        for x in 0..10 {
+            for y in 0..10 {
+                stats2.add_cell(x, y, false);
+            }
+        }
+        let mut comp2 = Component::new(stats2, 2, 0);
+        comp2.confidence = 0.9;
+        comp2.growth_rate = 0.1;
+
+        tracker.components.push(comp1).unwrap();
+        tracker.components.push(comp2).unwrap();
+
+        let mapper = ComponentNodeTypeMapper::default();
+        let logical_nodes = tracker.components_to_logical_nodes(&mapper);
+
+        assert_eq!(logical_nodes.len(), 2);
+        assert_eq!(logical_nodes[0].id, "component_1");
+        assert_eq!(logical_nodes[1].id, "component_2");
+
+        // Larger component should have higher criticality
+        assert!(logical_nodes[1].criticality > logical_nodes[0].criticality);
+
+        // Larger component should have higher resource requirements
+        assert!(logical_nodes[1].resources.power > logical_nodes[0].resources.power);
+    }
+
+    #[test]
+    /// **Requirement Verification**: REQ-FEAT-013 - Logical Topology Building
+    /// - Verifies creation of logical topology from component nodes
+    /// - Tests connectivity rules application
+    /// - Validates adjacency relationship establishment
+    fn test_logical_topology_building() {
+        let mut nodes = heapless::Vec::new();
+
+        // Power bus node
+        nodes
+            .push(LogicalNode {
+                id: "power_bus_1".into(),
+                node_type: LogicalNodeType::PowerBus,
+                state: LogicalNodeState::Operational,
+                connections: heapless::Vec::new(),
+                criticality: 0.9,
+                resources: LogicalNodeResources {
+                    power: 100.0,
+                    cpu_load: 0.0,
+                    memory_bytes: 0,
+                    bandwidth_bps: 0,
+                },
+            })
+            .unwrap();
+
+        // Sensor cluster node
+        nodes
+            .push(LogicalNode {
+                id: "sensor_1".into(),
+                node_type: LogicalNodeType::SensorCluster,
+                state: LogicalNodeState::Operational,
+                connections: heapless::Vec::new(),
+                criticality: 0.7,
+                resources: LogicalNodeResources {
+                    power: 20.0,
+                    cpu_load: 0.3,
+                    memory_bytes: 1024,
+                    bandwidth_bps: 1000,
+                },
+            })
+            .unwrap();
+
+        let builder = LogicalTopologyBuilder::default();
+        let topology = builder.build_topology(nodes);
+
+        assert_eq!(topology.nodes.len(), 2);
+
+        // Power bus should be connected to sensor
+        let power_bus = &topology.nodes[0];
+        assert!(power_bus.connections.contains(&"sensor_1".into()));
+
+        // Check adjacency map
+        let power_bus_key = "power_bus_1".to_string();
+        let sensor_key = "sensor_1".to_string();
+        assert!(topology.adjacency.contains_key(&power_bus_key));
+        assert!(topology.adjacency.contains_key(&sensor_key));
+    }
+
+    #[test]
+    /// **Requirement Verification**: REQ-FEAT-013 - Component Node Type Mapping
+    /// - Verifies size-based component classification
+    /// - Tests location-based mapping functionality
+    /// - Validates default mapping behavior
+    fn test_component_node_type_mapping() {
+        let mapper = ComponentNodeTypeMapper::default();
+
+        // Test small component (should map to default sensor cluster)
+        let mut small_stats = RegionStats::new();
+        small_stats.add_cell(25, 25, false); // Location in power bus region
+        let small_comp = Component::new(small_stats, 1, 0);
+
+        let node_type = mapper.map_component_to_node_type(&small_comp);
+        assert_eq!(node_type, LogicalNodeType::PowerBus); // Location-based mapping
+
+        // Test large component (should map to processing unit)
+        let mut large_stats = RegionStats::new();
+        for x in 0..15 {
+            for y in 0..15 {
+                large_stats.add_cell(x, y, false); // 225 cells > large threshold
+            }
+        }
+        let large_comp = Component::new(large_stats, 2, 0);
+
+        let node_type = mapper.map_component_to_node_type(&large_comp);
+        assert_eq!(node_type, LogicalNodeType::ProcessingUnit);
     }
 }

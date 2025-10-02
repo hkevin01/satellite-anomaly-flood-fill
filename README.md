@@ -1,11 +1,57 @@
 # 🛰️ Satellite Anomaly Flood-Fill
 
-[![Build Status](https://github.com/hkevin01/satellite-anomaly-flood-fill/workflows/CI/badge.svg)](https://github.com/hkevin01/satellite-anomaly-flood-fill/actions)
+[![CI](https://github.com/hkevin01/satellite-anomaly-flood-fill/actions/workflows/ci.yml/badge.svg)](https://github.com/hkevin01/satellite-anomaly-flood-fill/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/hkevin01/satellite-anomaly-flood-fill/branch/main/graph/badge.svg)](https://codecov.io/gh/hkevin01/satellite-anomaly-flood-fill)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Advanced satellite onboard anomaly isolation using flood-fill algorithms for space systems fault detection, isolation, and recovery (FDIR)**
+> **Advanced spatial anomaly detection with policy-based decision workflows - engineered for autonomous systems in contested and remote environments**
+
+## 🎯 Broader Decision-Aiding Architecture
+
+This system demonstrates how **spatial anomaly detection can trigger intelligent policy-based responses** across complex interconnected systems. While initially designed for satellite fault detection, the architecture's **logical flood-fill capabilities** extend far beyond space applications, offering a robust framework for **field-deployed systems in contested environments**.
+
+### 🔄 From Geographic to Logical Anomaly Processing
+
+The core innovation lies in transforming traditional **spatial flood-fill algorithms** into **logical system analysis**, where connectivity represents **dependency relationships** rather than physical adjacency. This enables:
+
+- **Hardware Fault Propagation**: Trace failures through power buses, sensor clusters, and communication networks
+- **Software Impact Containment**: Isolate compromised modules in distributed systems and microservice architectures
+- **Policy Response Modeling**: Simulate automated responses through logical system dependencies
+- **Contested Environment Adaptation**: Maintain operational capability under adversarial conditions
+
+### 🛡️ Contested Environment Applications
+
+The architecture's **policy-driven decision engine** makes it particularly suited for **field-deployed systems** facing hostile conditions:
+
+**Military/Defense Systems:**
+
+- **Network Resilience**: Automatically isolate compromised nodes while maintaining mission capability
+- **Equipment Hardening**: Rapid fault isolation in ruggedized systems under electronic warfare
+- **Supply Chain Security**: Detect and contain anomalies in distributed logistics networks
+
+**Critical Infrastructure:**
+
+- **Industrial Control Systems**: Secure SCADA networks with automated threat response
+- **Power Grid Protection**: Isolate grid failures while maintaining essential services
+- **Emergency Communications**: Maintain connectivity during natural disasters or attacks
+
+**Autonomous Operations:**
+
+- **Unmanned Vehicles**: Real-time fault detection for drones and ground robots in hostile terrain
+- **Remote Monitoring**: Solar farms, oil rigs, and mining operations in contested regions
+- **Border Security**: Sensor network resilience with adaptive threat response
+
+### ⚡ Real-Time Policy Enforcement
+
+The system's **multi-criteria decision engine** evaluates spatial anomalies against **configurable policy frameworks**, enabling:
+
+- **Threat Escalation**: Graduated response from monitoring to isolation to emergency shutdown
+- **Resource Optimization**: Balance mission objectives against system protection requirements
+- **Autonomous Recovery**: Self-healing capabilities without human intervention
+- **Mission Continuity**: Maintain operational effectiveness under degraded conditions
+
+This **spatial-to-logical abstraction** represents a paradigm shift in how autonomous systems can maintain operational integrity across diverse, challenging environments where traditional centralized decision-making fails.
 
 ## ✅ REQUIREMENT TRACEABILITY - IMPLEMENTATION COMPLETE
 
@@ -22,7 +68,9 @@ This satellite anomaly detection system includes **comprehensive requirement tra
 | **anomaly_map** | 6 requirements | ✅ Complete | ✅ 6/6 tests | ✅ Verified |
 | **decisions** | 8 requirements | ✅ Complete | ✅ 4/4 tests | ✅ Verified |
 
-**🏆 Total: 33 system requirements fully traced and verified**
+#### 🏆 Total System Coverage
+
+33 system requirements fully traced and verified
 
 #### 🔗 Requirement Documentation Structure
 
@@ -72,7 +120,7 @@ The system combines **temporal component tracking** with **IoU-based matching al
 - **📊 Advanced Analytics**: Multi-frame temporal analysis with intersection-over-union (IoU) component matching
 - **🔧 Modular Architecture**: Plug-and-play components supporting various grid geometries and connectivity patterns
 - **🧪 Space-Qualified Testing**: Property-based testing, fuzzing, and Monte Carlo validation for space deployment
-- **⚙️ Configurable Algorithms**: Tunable flood-fill parameters optimized for different spacecraft subsystemsd Status](https://github.com/hkevin01/satellite-anomaly-flood-fill/workflows/CI/badge.svg)](https://github.com/hkevin01/satellite-anomaly-flood-fill/actions)
+- **⚙️ Configurable Algorithms**: Tunable flood-fill parameters optimized for different spacecraft subsystemsd Status](<https://github.com/hkevin01/satellite-anomaly-flood-fill/workflows/CI/badge.svg>)](<https://github.com/hkevin01/satellite-anomaly-flood-fill/actions>)
 [![Coverage](https://codecov.io/gh/hkevin01/satellite-anomaly-flood-fill/branch/main/graph/badge.svg)](https://codecov.io/gh/hkevin01/satellite-anomaly-flood-fill)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -105,7 +153,7 @@ This project addresses these challenges by implementing **intelligent flood-fill
 
 This project implements a sophisticated flood-fill based anomaly detection system designed for small satellites and deep-space probes. The system can quickly isolate contiguous regions of anomalies on 2D/3D grids representing various spacecraft subsystems (solar arrays, radiators, sensor planes) and trigger appropriate containment actions.
 
-### Key Features
+### System Capabilities
 
 - **🚀 Space-Grade Software**: Designed for real-time embedded systems with `no_std` support
 - **⚡ High Performance**: Deterministic execution time with bounded memory allocation
@@ -216,6 +264,7 @@ satellite-anomaly-flood-fill/
 ### Crate-by-Crate Breakdown
 
 #### 🗺️ **anomaly_map** - Grid Data Structures
+
 ```mermaid
 graph TD
     A[AnomalyGrid] --> B[Cell Management]
@@ -244,12 +293,14 @@ graph TD
 **Purpose**: Provides the fundamental 2D grid abstractions for representing spacecraft subsystems.
 
 **Key Design Decisions**:
+
 - **Heapless Vectors**: Fixed-size collections prevent memory allocation failures
 - **Cell State Tracking**: Enum-based state machine for anomaly classification
 - **Temporal Metadata**: Built-in timestamp and confidence tracking
 - **No-std Compatible**: Works in embedded environments without standard library
 
 #### ⚡ **floodfill_core** - Algorithm Engine
+
 ```mermaid
 graph TD
     A[FloodFill Engine] --> B[4-Connected]
@@ -284,12 +335,14 @@ graph TD
 **Purpose**: High-performance flood-fill algorithms optimized for real-time space applications.
 
 **Key Design Decisions**:
+
 - **Stack-Based Implementation**: Avoids recursion for bounded stack usage
 - **Configurable Connectivity**: Support for both 4-connected and 8-connected regions
 - **Performance Metrics**: Built-in timing and memory usage tracking
 - **Region Statistics**: Comprehensive geometric analysis of detected components
 
 #### 🎯 **features** - Component Tracking & Temporal Analysis
+
 ```mermaid
 graph TD
     A[ComponentTracker] --> B[Multi-Frame Tracking]
@@ -331,12 +384,14 @@ graph TD
 **Purpose**: Advanced computer vision techniques for tracking anomaly evolution over time.
 
 **Key Design Decisions**:
+
 - **IoU-Based Matching**: Quantifies component similarity between frames for robust tracking
 - **Temporal Evolution**: Tracks growth rates, stability patterns, and component lifecycle
 - **Component Birth/Death**: Manages component creation and removal with configurable aging policies
 - **Threat Assessment**: Automatically escalates threat levels based on component behavior
 
 #### 🧠 **decisions** - Policy-Based Response Engine
+
 ```mermaid
 graph TD
     A[DecisionEngine] --> B[Threat Assessment]
@@ -378,6 +433,7 @@ graph TD
 **Purpose**: Intelligent decision-making framework that converts anomaly data into spacecraft actions.
 
 **Key Design Decisions**:
+
 - **Policy-Based Architecture**: Rule-driven system allows mission-specific configuration
 - **Context-Aware Decisions**: Considers spacecraft state (power, attitude, mission phase)
 - **Hierarchical Actions**: From passive monitoring to emergency shutdown with graduated response
@@ -386,6 +442,7 @@ graph TD
 ### Algorithm Deep Dive
 
 #### Flood-Fill Implementation
+
 ```mermaid
 sequenceDiagram
     participant Grid as AnomalyGrid
@@ -409,6 +466,7 @@ sequenceDiagram
 ```
 
 #### Component Matching Algorithm
+
 ```mermaid
 sequenceDiagram
     participant CT as ComponentTracker
@@ -965,4 +1023,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This satellite anomaly detection system represents the culmination of advanced computer vision techniques, real-time systems engineering, and space-grade software development practices. With comprehensive testing, proven performance characteristics, and successful mission deployments, the system is ready to protect your spacecraft from anomalies and ensure mission success.
 
-**Deploy with confidence. Explore with security. �️✨**
+### Deploy with confidence. Explore with security. 🛰️✨
