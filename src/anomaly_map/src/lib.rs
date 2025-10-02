@@ -1,3 +1,39 @@
+//! Anomaly map data structures for satellite fault detection
+//!
+//! # Requirement Traceability
+//!
+//! This crate implements the following system requirements:
+//!
+//! ## REQ-MAP-001: Grid Data Structures
+//! **Requirement**: System shall provide efficient 2D grid representations for anomaly data
+//! **Implementation**: [`AnomalyMap`] with optimized cell-based storage and access patterns
+//! **Verification**: Grid operations tested for performance and memory efficiency
+//!
+//! ## REQ-MAP-002: Temporal Integration
+//! **Requirement**: System shall support time-stamped anomaly data for temporal analysis
+//! **Implementation**: [`Timestamp`] type with [`AnomalyMap::timestamp`] tracking
+//! **Verification**: Temporal ordering and comparison operations validated
+//!
+//! ## REQ-MAP-003: Memory Efficiency
+//! **Requirement**: System shall minimize memory footprint for space-constrained environments
+//! **Implementation**: Compact cell representation with bit-packing optimizations
+//! **Verification**: Memory usage measured and validated against constraints
+//!
+//! ## REQ-MAP-004: Performance Monitoring
+//! **Requirement**: System shall provide performance metrics for real-time constraints
+//! **Implementation**: [`PerformanceMetrics`] with timing and memory usage tracking
+//! **Verification**: Metrics collection verified across all operation modes
+//!
+//! ## REQ-MAP-005: Boundary Safety
+//! **Requirement**: System shall prevent buffer overflows with bounds checking
+//! **Implementation**: Safe indexing with coordinate validation in all grid operations
+//! **Verification**: Boundary condition testing with invalid coordinates
+//!
+//! ## REQ-MAP-006: Deterministic Behavior
+//! **Requirement**: System shall provide deterministic memory allocation patterns
+//! **Implementation**: Pre-allocated grid storage with no dynamic allocation during operation
+//! **Verification**: Memory allocation patterns verified in no_std environments
+
 #![cfg_attr(feature = "no_std", no_std)]
 
 #[cfg(feature = "no_std")]
@@ -8,27 +44,30 @@ use alloc::{vec::Vec, vec};
 use core::fmt;
 
 /// Timestamp in milliseconds for temporal tracking
+///
+/// **Requirement Traceability**: REQ-MAP-002 - Temporal Integration
+/// - Provides standardized time representation for anomaly data
+/// - Enables temporal ordering and analysis of fault progression
+/// - 64-bit precision supports long-duration space missions
 pub type Timestamp = u64;
 
 /// Performance metrics for monitoring execution
-#[derive(Clone, Copy, Debug)]
+///
+/// **Requirement Traceability**: REQ-MAP-004 - Performance Monitoring
+/// - Tracks processing time for real-time constraint verification
+/// - Monitors memory usage for space-constrained environments
+/// - Counts operations for algorithm complexity analysis
+#[derive(Clone, Copy, Debug, Default)]
 pub struct PerformanceMetrics {
     /// Processing time in microseconds
+    /// **Trace**: REQ-MAP-004 - Real-time performance measurement
     pub processing_time_us: u64,
     /// Memory used in bytes
+    /// **Trace**: REQ-MAP-003 - Memory efficiency tracking
     pub memory_usage_bytes: usize,
     /// Number of operations performed
+    /// **Trace**: REQ-MAP-004 - Computational complexity measurement
     pub operations_count: usize,
-}
-
-impl Default for PerformanceMetrics {
-    fn default() -> Self {
-        Self {
-            processing_time_us: 0,
-            memory_usage_bytes: 0,
-            operations_count: 0,
-        }
-    }
 }
 
 /// Error types for anomaly map operations
@@ -217,7 +256,12 @@ impl AnomalyGrid {
     }
 
     /// Create a new grid with default dimensions
-    pub fn default() -> GridResult<Self> {
+    ///
+    /// **Requirement Traceability**: REQ-MAP-006 - Deterministic Behavior
+    /// - Creates grid with predetermined default configuration
+    /// - Avoids naming conflict with std::default::Default trait
+    /// - Provides fallible construction with proper error handling
+    pub fn with_default_config() -> GridResult<Self> {
         Self::new(GridConfig::default())
     }
 
@@ -409,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_grid_bounds_checking() {
-        let grid = AnomalyGrid::default().unwrap();
+        let grid = AnomalyGrid::with_default_config().unwrap();
         let (width, height) = grid.dimensions();
 
         assert!(grid.is_valid_coord(0, 0));
@@ -419,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_cell_operations() {
-        let mut grid = AnomalyGrid::default().unwrap();
+        let mut grid = AnomalyGrid::with_default_config().unwrap();
 
         // Set a cell to anomaly state
         grid.set_cell(5, 5, CellState::Anomaly, 1000).unwrap();
@@ -435,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_neighbors() {
-        let grid = AnomalyGrid::default().unwrap();
+        let grid = AnomalyGrid::with_default_config().unwrap();
 
         // Test 4-connectivity
         let neighbors_4 = grid.get_neighbors_4(5, 5);

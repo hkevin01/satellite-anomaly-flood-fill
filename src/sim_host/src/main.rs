@@ -201,7 +201,7 @@ impl Simulation {
             flood_fill_config: FloodFillConfig::default(),
         };
         let component_tracker = ComponentTracker::new(config);
-        let decision_engine = DecisionEngine::default();
+        let decision_engine = DecisionEngine::with_default_policy();
         let context = DecisionContext {
             timestamp: 0,
             power_level: 100,

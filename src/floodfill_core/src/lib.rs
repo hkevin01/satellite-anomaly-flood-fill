@@ -1,3 +1,49 @@
+//! Core flood-fill algorithms for satellite anomaly detection
+//!
+//! # Requirement Traceability
+//!
+//! This crate implements the following system requirements:
+//!
+//! ## REQ-FLOOD-001: Connected Component Detection
+//! **Requirement**: System shall identify connected anomalous regions using flood-fill algorithms
+//! **Implementation**: [`flood_fill_4conn`] and [`flood_fill_8conn`] with stack-based traversal
+//! **Verification**: Unit tests validate detection of various region shapes and configurations
+//!
+//! ## REQ-FLOOD-002: Connectivity Options
+//! **Requirement**: System shall support both 4-connectivity and 8-connectivity analysis
+//! **Implementation**: Separate algorithms for 4-neighbor and 8-neighbor connectivity
+//! **Verification**: Connectivity differences tested with diagonal anomaly patterns
+//!
+//! ## REQ-FLOOD-003: Region Statistics
+//! **Requirement**: System shall compute geometric statistics for detected regions
+//! **Implementation**: [`RegionStats`] with area, perimeter, centroid, and bounding box
+//! **Verification**: Statistics validated against known geometric shapes
+//!
+//! ## REQ-FLOOD-004: Memory Safety
+//! **Requirement**: System shall prevent stack overflow with bounded memory usage
+//! **Implementation**: Configurable stack limits in [`FloodFillConfig`]
+//! **Verification**: Stack overflow protection tested with large connected regions
+//!
+//! ## REQ-FLOOD-005: Performance Constraints
+//! **Requirement**: System shall complete flood-fill within specified time limits
+//! **Implementation**: Timeout handling with early termination capability
+//! **Verification**: Performance tested with large grids and complex patterns
+//!
+//! ## REQ-FLOOD-006: Error Handling
+//! **Requirement**: System shall provide comprehensive error reporting for all failure modes
+//! **Implementation**: [`FloodFillError`] covering all failure scenarios with context
+//! **Verification**: Error conditions tested for proper propagation and handling
+//!
+//! ## REQ-FLOOD-007: Deterministic Behavior
+//! **Requirement**: System shall provide repeatable results for identical inputs
+//! **Implementation**: Deterministic traversal order with consistent seed handling
+//! **Verification**: Reproducibility tested across multiple executions
+//!
+//! ## REQ-FLOOD-008: Grid Validation
+//! **Requirement**: System shall validate grid parameters before processing
+//! **Implementation**: Coordinate bounds checking and dimension validation
+//! **Verification**: Input validation tested with edge cases and invalid parameters
+
 #![cfg_attr(feature = "no_std", no_std)]
 
 #[cfg(feature = "no_std")]
@@ -6,6 +52,11 @@ extern crate alloc;
 use core::fmt;
 
 /// Error types for flood-fill operations
+///
+/// **Requirement Traceability**: REQ-FLOOD-006 - Error Handling
+/// - Provides comprehensive error classification for all failure modes
+/// - Enables graceful degradation and fault isolation in space systems
+/// - Supports both std and no_std error handling patterns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloodFillError {
     /// Stack overflow during flood-fill operation
@@ -120,30 +171,28 @@ impl RegionStats {
 }
 
 /// Performance metrics for flood-fill operations
-#[derive(Debug, Clone, Copy)]
+///
+/// **Requirement Traceability**: REQ-FLOOD-005 - Performance Constraints
+/// - Tracks processing metrics for real-time constraint verification
+/// - Monitors memory usage for space-constrained environments
+/// - Provides timing data for algorithm optimization
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FloodFillMetrics {
     /// Number of cells processed
+    /// **Trace**: REQ-FLOOD-005 - Algorithm complexity measurement
     pub cells_processed: usize,
     /// Number of stack operations
+    /// **Trace**: REQ-FLOOD-004 - Stack usage monitoring
     pub stack_operations: usize,
     /// Peak stack depth
+    /// **Trace**: REQ-FLOOD-004 - Memory safety verification
     pub peak_stack_depth: usize,
     /// Processing time in microseconds (only available with std feature)
+    /// **Trace**: REQ-FLOOD-005 - Real-time performance measurement
     pub processing_time_us: u64,
     /// Memory usage in bytes
+    /// **Trace**: REQ-FLOOD-004 - Memory constraint monitoring
     pub memory_usage_bytes: usize,
-}
-
-impl Default for FloodFillMetrics {
-    fn default() -> Self {
-        Self {
-            cells_processed: 0,
-            stack_operations: 0,
-            peak_stack_depth: 0,
-            processing_time_us: 0,
-            memory_usage_bytes: 0,
-        }
-    }
 }
 
 /// Configuration for flood-fill operations
@@ -202,7 +251,15 @@ where
 {
     let mut config_4conn = *config;
     config_4conn.use_8_connectivity = false;
-    flood_fill_impl(width, height, is_target, visited, start_x, start_y, &config_4conn)
+    flood_fill_impl(
+        width,
+        height,
+        is_target,
+        visited,
+        start_x,
+        start_y,
+        &config_4conn,
+    )
 }
 
 /// Perform flood-fill with 8-connectivity (including diagonal neighbors)
@@ -220,7 +277,15 @@ where
 {
     let mut config_8conn = *config;
     config_8conn.use_8_connectivity = true;
-    flood_fill_impl(width, height, is_target, visited, start_x, start_y, &config_8conn)
+    flood_fill_impl(
+        width,
+        height,
+        is_target,
+        visited,
+        start_x,
+        start_y,
+        &config_8conn,
+    )
 }
 
 /// Internal implementation of flood-fill algorithm
@@ -381,7 +446,7 @@ where
     }
 
     metrics.memory_usage_bytes = stack.capacity() * core::mem::size_of::<(usize, usize)>()
-        + visited.len() * core::mem::size_of::<u8>();
+        + core::mem::size_of_val(&*visited);
 
     Ok((stats, metrics))
 }
@@ -451,15 +516,7 @@ mod tests {
         let anomaly_cells = [(1, 1), (1, 2), (2, 1), (2, 2)];
         let is_anomaly = |x: usize, y: usize| anomaly_cells.contains(&(x, y));
 
-        let result = flood_fill_4conn(
-            width,
-            height,
-            is_anomaly,
-            &mut visited,
-            1,
-            1,
-            &config
-        );
+        let result = flood_fill_4conn(width, height, is_anomaly, &mut visited, 1, 1, &config);
 
         assert!(result.is_ok());
         let (stats, _metrics) = result.unwrap();
